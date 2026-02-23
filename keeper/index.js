@@ -194,6 +194,7 @@ async function main() {
     }, 1000);
 }
 
-main().catch(err => {
-    console.error("Keeper failed:", err);
+main().catch((err) => {
+  console.error("Fatal Keeper Error:", err);
+  process.exit(1);
 });

@@ -68,7 +68,7 @@ Once you have your prerequisite software and environment variables ready, follow
    ```
 
 2. **Install Dependencies**  
-   Run the following command to install the required Node.js packages (`soroban-client` and `dotenv`):
+   Run the following command to install the required Node.js packages (`soroban-client`, `dotenv`, and `node-fetch`):
    ```bash
    npm install
    ```

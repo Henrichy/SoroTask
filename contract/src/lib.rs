@@ -819,7 +819,8 @@ mod tests {
 
         // Verify keeper received the fee
         assert_eq!(
-            token_client.balance(&keeper), 100,
+            token_client.balance(&keeper),
+            100,
             "keeper should receive the fee"
         );
     }

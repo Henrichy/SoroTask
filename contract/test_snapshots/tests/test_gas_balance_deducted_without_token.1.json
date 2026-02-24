@@ -124,7 +124,7 @@
   "ledger": {
     "protocol_version": 21,
     "sequence_number": 0,
-    "timestamp": 12345,
+    "timestamp": 3600,
     "network_id": "0000000000000000000000000000000000000000000000000000000000000000",
     "base_reserve": 0,
     "min_persistent_entry_ttl": 4096,
@@ -255,7 +255,7 @@
                         "symbol": "last_run"
                       },
                       "val": {
-                        "u64": 12345
+                        "u64": 3600
                       }
                     },
                     {
@@ -814,7 +814,7 @@
                     "symbol": "last_run"
                   },
                   "val": {
-                    "u64": 12345
+                    "u64": 3600
                   }
                 },
                 {

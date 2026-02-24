@@ -213,20 +213,20 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">10x</span>
+<span class="cline-any cline-yes">10x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">10x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">10x</span>
+<span class="cline-any cline-yes">10x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">10x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -310,14 +310,14 @@ class GasMonitor {
     return shouldSkip;
   }
 &nbsp;
-<span class="fstat-no" title="function not covered" >  as</span>ync sendWebhookAlert(taskId, gasBalance) {
-    const last = <span class="cstat-no" title="statement not covered" >this.lastAlertTimestamps.get(taskId);</span>
-    const now = <span class="cstat-no" title="statement not covered" >Date.now();</span>
+  async sendWebhookAlert(taskId, gasBalance) {
+    const last = this.lastAlertTimestamps.get(taskId);
+    const now = Date.now();
 &nbsp;
-<span class="cstat-no" title="statement not covered" >    if (last &amp;&amp; now - last &lt; this.ALERT_DEBOUNCE_MS) <span class="cstat-no" title="statement not covered" >return;</span></span>
+    <span class="missing-if-branch" title="if path not taken" >I</span>if (last &amp;&amp; <span class="branch-1 cbranch-no" title="branch not covered" >now - last &lt; this.ALERT_DEBOUNCE_MS)</span> <span class="cstat-no" title="statement not covered" >return;</span>
 &nbsp;
-<span class="cstat-no" title="statement not covered" >    try {</span>
-      const payload = <span class="cstat-no" title="statement not covered" >{</span>
+    try {
+      const payload = {
         event: "low_gas",
         taskId: taskId.toString(),
         gasBalance,

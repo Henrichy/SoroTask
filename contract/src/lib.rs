@@ -150,17 +150,43 @@ impl SoroTaskContract {
         };
 
         if should_execute {
-            // ── Cross-contract call ──────────────────────────────────────────
-            // `args` is Vec<Val> as stored in TaskConfig — passed directly.
-            // The return value is discarded; callers can read target state
-            // independently if needed.
+            // ── Fee validation & calculation (MVP: fixed fee) ──────────────
+            // For MVP use a fixed fee per execution. Ensure the task has
+            // sufficient gas_balance before attempting execution.
+            let fee: i128 = 100; // fixed fee units (token smallest unit)
+            if config.gas_balance < fee {
+                panic_with_error!(&env, Error::InsufficientBalance);
+            }
+
+            // ── Cross-contract call ──────────────────────────────────────
             env.invoke_contract::<Val>(&config.target, &config.function, config.args.clone());
 
-            // ── State update ────────────────────────────────────────────────
-            // Reached only when invoke_contract returned without panic.
-            // Record the ledger timestamp of this successful execution.
+            // ── Payment to keeper & balance deduction ────────────────────
+            // Decrease the stored gas_balance regardless, and if a token has
+            // been initialized attempt to transfer the fee from this
+            // contract to the keeper.
+            config.gas_balance -= fee;
+
+            // If token initialized, perform an on-chain token transfer. If
+            // not initialized we still deduct the accounting balance so the
+            // task reflects consumed gas for off-chain tracking.
+            if env.storage().instance().has(&DataKey::Token) {
+                let token_address: Address = env
+                    .storage()
+                    .instance()
+                    .get(&DataKey::Token)
+                    .expect("Not initialized");
+                let token_client = soroban_sdk::token::Client::new(&env, &token_address);
+                token_client.transfer(&env.current_contract_address(), &keeper, &fee);
+            }
+
+            // ── State update ────────────────────────────────────────────
             config.last_run = env.ledger().timestamp();
             env.storage().persistent().set(&task_key, &config);
+
+            // Emit keeper paid event
+            env.events()
+                .publish((Symbol::new(&env, "KeeperPaid"), task_id), (keeper, fee));
         }
     }
 
@@ -746,5 +772,115 @@ mod tests {
         client.execute(&allowed_keeper, &task_id);
 
         assert_eq!(client.get_task(&task_id).unwrap().last_run, 12_345);
+    }
+
+    /// Test that keeper receives a fee and gas_balance is deducted on execution.
+    #[test]
+    fn test_keeper_receives_fee_on_execution() {
+        let (env, id) = setup();
+        let client = SoroTaskContractClient::new(&env, &id);
+
+        let token_admin = Address::generate(&env);
+        let token_id = env.register_stellar_asset_contract_v2(token_admin.clone());
+        let token_address = token_id.address();
+        let token_client = soroban_sdk::token::Client::new(&env, &token_address);
+        let token_admin_client = soroban_sdk::token::StellarAssetClient::new(&env, &token_address);
+
+        client.init(&token_address);
+
+        let target = env.register_contract(None, MockTarget);
+        let mut cfg = base_config(&env, target);
+        cfg.gas_balance = 0; // Start with 0, will deposit later
+        let creator = cfg.creator.clone();
+        let task_id = client.register(&cfg);
+
+        // Mint tokens to creator and keeper
+        let keeper = Address::generate(&env);
+        token_admin_client.mint(&creator, &5000);
+        token_admin_client.mint(&keeper, &0);
+
+        // Deposit gas
+        client.deposit_gas(&task_id, &creator, &1000);
+        let initial_balance = client.get_task(&task_id).unwrap().gas_balance;
+        assert_eq!(initial_balance, 1000);
+
+        // Execute task
+        set_timestamp(&env, 3600);
+        client.execute(&keeper, &task_id);
+
+        // Verify fee was deducted (fixed fee of 100)
+        let final_balance = client.get_task(&task_id).unwrap().gas_balance;
+        assert_eq!(
+            final_balance, 900,
+            "gas_balance should be reduced by fee amount (100)"
+        );
+
+        // Verify keeper received the fee
+        assert_eq!(
+            token_client.balance(&keeper),
+            100,
+            "keeper should receive the fee"
+        );
+    }
+
+    /// Test that execution fails if gas_balance is insufficient for the fee.
+    #[test]
+    fn test_execute_fails_with_insufficient_gas_balance() {
+        let (env, id) = setup();
+        let client = SoroTaskContractClient::new(&env, &id);
+
+        let token_admin = Address::generate(&env);
+        let token_id = env.register_stellar_asset_contract_v2(token_admin.clone());
+        let token_address = token_id.address();
+        client.init(&token_address);
+
+        let target = env.register_contract(None, MockTarget);
+        let mut cfg = base_config(&env, target);
+        cfg.gas_balance = 50; // Less than the fixed fee of 100
+        let task_id = client.register(&cfg);
+
+        set_timestamp(&env, 3600);
+        let keeper = Address::generate(&env);
+
+        // Execution should fail due to insufficient balance
+        let result = client.try_execute(&keeper, &task_id);
+        assert_eq!(
+            result,
+            Err(Ok(soroban_sdk::Error::from_contract_error(
+                Error::InsufficientBalance as u32
+            )))
+        );
+
+        // Verify gas_balance unchanged
+        assert_eq!(
+            client.get_task(&task_id).unwrap().gas_balance,
+            50,
+            "gas_balance should not change on failed execution"
+        );
+    }
+
+    /// Test that gas_balance is deducted even without initialized token.
+    #[test]
+    fn test_gas_balance_deducted_without_token() {
+        let (env, id) = setup();
+        let client = SoroTaskContractClient::new(&env, &id);
+
+        let target = env.register_contract(None, MockTarget);
+        let mut cfg = base_config(&env, target);
+        cfg.gas_balance = 1000;
+        let task_id = client.register(&cfg);
+
+        set_timestamp(&env, 3600);
+        let keeper = Address::generate(&env);
+
+        // Execute without initializing token
+        client.execute(&keeper, &task_id);
+
+        // Verify gas_balance was deducted (fee of 100)
+        assert_eq!(
+            client.get_task(&task_id).unwrap().gas_balance,
+            900,
+            "gas_balance should be deducted even without token initialized"
+        );
     }
 }

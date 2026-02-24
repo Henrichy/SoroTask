@@ -185,10 +185,8 @@ impl SoroTaskContract {
             env.storage().persistent().set(&task_key, &config);
 
             // Emit keeper paid event
-            env.events().publish(
-                (Symbol::new(&env, "KeeperPaid"), task_id),
-                (keeper, fee),
-            );
+            env.events()
+                .publish((Symbol::new(&env, "KeeperPaid"), task_id), (keeper, fee));
         }
     }
 

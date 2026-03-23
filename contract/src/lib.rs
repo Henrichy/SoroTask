@@ -374,6 +374,7 @@ mod tests {
         env.ledger().with_mut(|l| l.timestamp = ts);
     }
 
+    #[allow(dead_code)]
     pub fn update_task(env: Env, task_id: u64, new_config: TaskConfig) {
         let task_key = DataKey::Task(task_id);
 

@@ -375,37 +375,37 @@ mod tests {
     }
 
     pub fn update_task(env: Env, task_id: u64, new_config: TaskConfig) {
-    let task_key = DataKey::Task(task_id);
-    
-    let existing: TaskConfig = env
-        .storage()
-        .persistent()
-        .get(&task_key)
-        .expect("Task not found");
+        let task_key = DataKey::Task(task_id);
 
-    // Only original creator can update
-    existing.creator.require_auth();
+        let existing: TaskConfig = env
+            .storage()
+            .persistent()
+            .get(&task_key)
+            .expect("Task not found");
 
-    // Validate interval
-    if new_config.interval == 0 {
-        panic_with_error!(&env, Error::InvalidInterval);
+        // Only original creator can update
+        existing.creator.require_auth();
+
+        // Validate interval
+        if new_config.interval == 0 {
+            panic_with_error!(&env, Error::InvalidInterval);
+        }
+
+        // Preserve fields that must not change
+        let updated = TaskConfig {
+            creator: existing.creator,         // lock — cannot transfer ownership
+            gas_balance: existing.gas_balance, // lock — use deposit/withdraw
+            last_run: existing.last_run,       // lock — would break interval logic
+            ..new_config
+        };
+
+        env.storage().persistent().set(&task_key, &updated);
+
+        env.events().publish(
+            (Symbol::new(&env, "TaskUpdated"), task_id),
+            updated.creator.clone(),
+        );
     }
-
-    // Preserve fields that must not change
-    let updated = TaskConfig {
-        creator: existing.creator,       // lock — cannot transfer ownership
-        gas_balance: existing.gas_balance, // lock — use deposit/withdraw
-        last_run: existing.last_run,       // lock — would break interval logic
-        ..new_config
-    };
-
-    env.storage().persistent().set(&task_key, &updated);
-
-    env.events().publish(
-        (Symbol::new(&env, "TaskUpdated"), task_id),
-        updated.creator.clone(),
-    );
-}
     // ── Tests ─────────────────────────────────────────────────────────────────
 
     /// Registering a task stores it; get_task retrieves identical data.

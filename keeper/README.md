@@ -97,5 +97,69 @@ If successful, you will see output indicating that the Keeper has started, along
 - **Cause**: Application dependencies were not correctly or fully installed.
 - **Solution**: Ensure you ran `npm install` inside the `keeper/` directory correctly. Try clearing cache or removing `node_modules` (`rm -rf node_modules`) and running `npm install` again.
 
+## Docker Deployment
+
+The Keeper ships with a multi-stage Dockerfile and a `docker-compose.yml` at the repo root so you can run it on any server with a single command — no local Node.js installation required.
+
+### Prerequisites
+
+- [Docker Engine](https://docs.docker.com/engine/install/) ≥ 24 (tested on 29.x)
+- Docker Compose v2 (`docker compose` — space, not hyphen)
+
+### Quick Start (recommended)
+
+```bash
+# 1. From the repo root, copy and fill in the environment file
+cp keeper/.env.example keeper/.env
+# Edit keeper/.env with your KEEPER_SECRET, CONTRACT_ID, etc.
+
+# 2. Build the image and start the keeper in the background
+docker compose up --build -d
+
+# 3. Tail logs
+docker compose logs -f keeper
+```
+
+The keeper's health and metrics endpoint will be reachable at `http://localhost:3000/health`.
+
+### Check Health
+
+```bash
+# Should return {"status":"ok","uptime":...}
+curl http://localhost:3000/health
+
+# Or let Docker tell you (after ~30 s start_period)
+docker compose ps
+# Look for "healthy" in the STATUS column
+```
+
+### Data Persistence
+
+The task registry (`data/tasks.json`) is stored in `./keeper/data/` on the host and mounted into the container. It survives container restarts and upgrades automatically.
+
+### Standalone Docker Commands (npm scripts)
+
+If you prefer to manage the container yourself without Compose, two npm convenience scripts are available. Run them from inside the `keeper/` directory:
+
+```bash
+# Build the image
+npm run docker:build
+
+# Run the container (reads .env from the current directory)
+npm run docker:run
+```
+
+### Stop / Restart
+
+```bash
+# Stop (data volume is preserved)
+docker compose down
+
+# Restart after config changes
+docker compose up -d --build
+```
+
+---
+
 ## Need Help?
 If you're still running into issues, feel free to open a GitHub issue or reach out to our community channels.

@@ -1,0 +1,25 @@
+services:
+  keeper:
+    build:
+      context: ./keeper
+      dockerfile: Dockerfile
+    # Load all environment variables from keeper/.env
+    # Copy keeper/.env.example → keeper/.env and fill in your values before running.
+    env_file:
+      - ./keeper/.env
+    volumes:
+      # Persist the task registry (data/tasks.json) across container restarts.
+      - ./keeper/data:/app/data
+    ports:
+      # Expose the health / metrics HTTP server.
+      # Override METRICS_PORT in .env and update the mapping here if needed.
+      - "3000:3000"
+    restart: unless-stopped
+    healthcheck:
+      # Uses wget (available in Alpine) to probe the /health endpoint.
+      # wget exits non-zero on HTTP errors, which satisfies Docker's check.
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s

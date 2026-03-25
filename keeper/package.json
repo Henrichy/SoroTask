@@ -10,6 +10,9 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:coverage": "jest --coverage",
+    "lint": "echo \"No linting configured\"",
+    "docker:build": "docker build -t sorotask-keeper .",
+    "docker:run": "docker run --env-file .env -p 3000:3000 -v $(pwd)/data:/app/data sorotask-keeper"
     "lint": "eslint src/ __tests__/",
     "lint:fix": "eslint src/ __tests__/ --fix"
   },

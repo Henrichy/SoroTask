@@ -1,0 +1,23 @@
+# Dependencies — re-installed inside the container from package-lock.json
+node_modules
+
+# Secrets — must never be baked into an image
+.env
+
+# Persisted runtime state — mounted as a volume at runtime
+data/
+
+# Version control metadata
+.git
+.gitignore
+
+# Test artefacts & coverage reports
+coverage
+__tests__
+*.test.js
+index.test.js
+test-cjs.js
+test-esm.js
+
+# Docs (optional: remove if you want them in the image for reference)
+*.md

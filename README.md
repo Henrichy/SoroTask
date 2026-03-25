@@ -17,12 +17,14 @@ SoroTask is a decentralized automation marketplace on Soroban. It allows users t
 ## Setup Instructions
 
 ### 1. Smart Contract
+
 ```bash
 cd contract
 cargo build --target wasm32-unknown-unknown --release
 ```
 
 ### 2. Keeper Bot
+
 ```bash
 cd keeper
 npm install
@@ -30,12 +32,104 @@ node index.js
 ```
 
 ### 3. Frontend Dashboard
+
 ```bash
 cd frontend
 npm run dev
 ```
 
 ## Architecture
+
+### System Overview
+
+The SoroTask ecosystem operates through a coordinated loop between Users, the Smart Contract, Keepers, and Target Contracts:
+
+```mermaid
+flowchart TB
+    subgraph User_Layer["User Layer"]
+        User["👤 User\n(Task Creator)"]
+        Dashboard["🖥️ Frontend Dashboard\n(Next.js)"]
+    end
+
+    subgraph Contract_Layer["Smart Contract Layer"]
+        SoroTask["📜 SoroTask Contract\n(Soroban/Rust)"]
+        Resolver["⚖️ Resolver Contract\n(Optional Condition)"]
+    end
+
+    subgraph Keeper_Layer["Keeper Layer"]
+        Keeper["🤖 Keeper Bot\n(Node.js)"]
+        Poller["📡 Task Poller"]
+        Executor["⚡ Task Executor"]
+    end
+
+    subgraph Target_Layer["Target Layer"]
+        TargetContract["🎯 Target Contract\n(User-Defined)"]
+    end
+
+    %% User Registration Flow
+    User -->|"1. Creates Task via UI"| Dashboard
+    Dashboard -->|"2. register\nTaskConfig"| SoroTask
+
+    %% Keeper Monitoring Flow
+    SoroTask -->|"3. Query Tasks"| Poller
+    Poller -->|"4. Check Intervals\n& Conditions"| Keeper
+
+    %% Execution Flow
+    Keeper -->|"5. execute\ntask_id"| SoroTask
+    SoroTask -->|"6. check_condition\n(optional)"| Resolver
+    Resolver -->|"7. Returns true/false"| SoroTask
+    SoroTask -->|"8. Invoke target function"| TargetContract
+
+    %% Feedback Loop
+    TargetContract -->|"9. Execution Result"| SoroTask
+    SoroTask -->|"10. Update last_run\n& Emit Events"| SoroTask
+
+    %% Styling
+    style User_Layer fill:#e1f5ff
+    style Contract_Layer fill:#fff4e1
+    style Keeper_Layer fill:#f0e1ff
+    style Target_Layer fill:#e1ffe1
+```
+
+### Component Interaction Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Dashboard
+    participant SoroTask as SoroTask Contract
+    participant Keeper as Keeper Bot
+    participant Target as Target Contract
+
+    Note over User,Keeper: Registration Phase
+    User->>Dashboard: Create automation task
+    Dashboard->>SoroTask: register(TaskConfig)
+    SoroTask->>SoroTask: Store task & emit event
+    SoroTask-->>Dashboard: Task ID assigned
+    Dashboard-->>User: Task registered successfully
+
+    Note over SoroTask,Keeper: Monitoring Phase
+    Keeper->>SoroTask: get_task(taskId)
+    SoroTask-->>Keeper: TaskConfig {interval, last_run, ...}
+    Keeper->>Keeper: Check: now >= last_run + interval
+
+    Note over SoroTask,Keeper: Execution Phase
+    Keeper->>SoroTask: execute(keeper, taskId)
+    SoroTask->>SoroTask: Validate keeper (whitelist)
+    SoroTask->>SoroTask: Check interval elapsed
+    opt If resolver is set
+        SoroTask->>SoroTask: Call resolver.check_condition()
+        SoroTask-->>SoroTask: Returns true/false
+    end
+    SoroTask->>Target: Invoke target.function(args)
+    Target-->>SoroTask: Execution result
+    SoroTask->>SoroTask: Update last_run timestamp
+    SoroTask-->>Keeper: Success
+    Keeper->>Keeper: Log execution & metrics
+```
+
+### Architecture Summary
+
 1. **Register**: User registers a task via Contract.
 2. **Monitor**: Keepers scan for due tasks.
 3. **Execute**: Keeper executes the task and gets rewarded.
@@ -52,6 +146,7 @@ The Keeper exposes HTTP endpoints for health checks and operational metrics.
 Returns the current health status of the Keeper process.
 
 **Response** (200 OK):
+
 ```json
 {
   "status": "ok",
@@ -62,6 +157,7 @@ Returns the current health status of the Keeper process.
 ```
 
 **Response** (503 Service Unavailable):
+
 ```json
 {
   "status": "stale",
@@ -81,6 +177,7 @@ The endpoint returns `503` if the last poll timestamp is older than `HEALTH_STAL
 Returns operational statistics for monitoring task execution performance.
 
 **Response** (200 OK):
+
 ```json
 {
   "tasksCheckedTotal": 1250,
@@ -93,6 +190,7 @@ Returns operational statistics for monitoring task execution performance.
 ```
 
 **Metrics**:
+
 - `tasksCheckedTotal`: Total number of tasks checked across all polling cycles
 - `tasksDueTotal`: Total number of tasks that were due for execution
 - `tasksExecutedTotal`: Total number of successfully executed tasks

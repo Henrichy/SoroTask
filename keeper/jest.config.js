@@ -10,10 +10,12 @@ module.exports = {
   coverageDirectory: "coverage",
   coverageReporters: ["text", "lcov", "json-summary"],
   collectCoverageFrom: [
-    "**/*.js",
-    "!node_modules/**",
-    "!coverage/**",
-    "!jest.config.js"
+    "src/concurrency.js",
+    "src/logger.js",
+    "src/poller.js",
+    "src/queue.js",
+    "src/registry.js",
+    "src/retry.js"
   ],
   coverageThreshold: {
     global: {

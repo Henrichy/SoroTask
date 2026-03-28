@@ -2,20 +2,18 @@
  * Unit tests for logger.js - Structured logging with pino
  */
 
-const { 
-  createLogger, 
+const {
+  createLogger,
   createChildLogger,
-  getBaseLogger,
   reinitializeLogger,
-  getLogLevel,
-  setLogLevel,
-  SENSITIVE_FIELDS 
+  normalizeLogLevel,
+  SENSITIVE_FIELDS,
 } = require('../src/logger.js');
 
 describe('Logger', () => {
   // Store original env vars
   const originalEnv = process.env;
-  
+
   beforeEach(() => {
     // Reset modules to get fresh logger instances
     jest.resetModules();
@@ -32,7 +30,7 @@ describe('Logger', () => {
   describe('createLogger', () => {
     it('should create a logger with all log level methods', () => {
       const logger = createLogger('test');
-      
+
       expect(typeof logger.trace).toBe('function');
       expect(typeof logger.debug).toBe('function');
       expect(typeof logger.info).toBe('function');
@@ -56,7 +54,7 @@ describe('Logger', () => {
     it('should be an alias for createLogger', () => {
       const logger1 = createLogger('test');
       const logger2 = createChildLogger('test');
-      
+
       expect(typeof logger1.info).toBe('function');
       expect(typeof logger2.info).toBe('function');
     });
@@ -74,7 +72,7 @@ describe('Logger', () => {
       jest.resetModules();
       const { createLogger: freshCreateLogger } = require('../src/logger.js');
       const logger = freshCreateLogger('test');
-      
+
       expect(logger.raw.level).toBe('debug');
     });
 
@@ -83,8 +81,13 @@ describe('Logger', () => {
       jest.resetModules();
       const { createLogger: freshCreateLogger } = require('../src/logger.js');
       const logger = freshCreateLogger('test');
-      
+
       expect(logger.raw.level).toBe('error');
+    });
+
+    it('should fall back to info for invalid LOG_LEVEL values', () => {
+      expect(normalizeLogLevel('verbose')).toBe('info');
+      expect(normalizeLogLevel('debug')).toBe('debug');
     });
   });
 
@@ -93,13 +96,13 @@ describe('Logger', () => {
       process.env.LOG_LEVEL = 'warn';
       jest.resetModules();
       const { getLogLevel: freshGetLogLevel } = require('../src/logger.js');
-      
+
       expect(freshGetLogLevel()).toBe('warn');
     });
 
     it('should set log level dynamically', () => {
       const { setLogLevel: freshSetLogLevel, getLogLevel: freshGetLogLevel } = require('../src/logger.js');
-      
+
       freshSetLogLevel('debug');
       expect(freshGetLogLevel()).toBe('debug');
     });
@@ -108,7 +111,7 @@ describe('Logger', () => {
   describe('reinitializeLogger', () => {
     it('should allow reinitializing with new options', () => {
       const { reinitializeLogger: freshReinit, getLogLevel: freshGetLevel } = require('../src/logger.js');
-      
+
       freshReinit({ level: 'trace' });
       expect(freshGetLevel()).toBe('trace');
     });
@@ -130,29 +133,54 @@ describe('Logger', () => {
     });
   });
 
-  describe('development mode pretty printing', () => {
-    it('should not have transport in production mode', () => {
-      process.env.NODE_ENV = 'production';
-      jest.resetModules();
-      const { createLogger: freshCreateLogger, getBaseLogger: freshGetBase } = require('../src/logger.js');
-      
-      freshCreateLogger('test');
-      const baseLogger = freshGetBase();
-      
-      // In production, there should be no transport (pretty printing)
-      expect(baseLogger.transport).toBeUndefined();
-    });
-
-    it('should configure transport in development mode', () => {
+  describe('log format selection', () => {
+    it('should default to JSON even in development mode', () => {
       process.env.NODE_ENV = 'development';
       jest.resetModules();
       const { createLogger: freshCreateLogger, getBaseLogger: freshGetBase } = require('../src/logger.js');
-      
+
       freshCreateLogger('test');
       const baseLogger = freshGetBase();
-      
-      // In development, pino-pretty transport should be configured
-      expect(baseLogger.transport).toBeDefined();
+
+      expect(baseLogger.logFormat).toBe('json');
+    });
+
+    it('should configure pretty transport only when LOG_FORMAT=pretty', () => {
+      process.env.LOG_FORMAT = 'pretty';
+      jest.resetModules();
+      const { createLogger: freshCreateLogger, getBaseLogger: freshGetBase } = require('../src/logger.js');
+
+      freshCreateLogger('test');
+      const baseLogger = freshGetBase();
+
+      expect(baseLogger.logFormat).toBe('pretty');
+    });
+  });
+
+  describe('JSON output', () => {
+    it('should emit JSON logs with normalized fields and metadata', () => {
+      const chunks = [];
+      const destination = {
+        write(chunk) {
+          chunks.push(chunk.toString());
+        },
+      };
+
+      reinitializeLogger({ destination });
+      const logger = createLogger('poller');
+      logger.info('Task is due', { taskId: 42, dueInSeconds: 0 });
+
+      const payload = JSON.parse(chunks[0]);
+      expect(payload).toMatchObject({
+        level: 'info',
+        message: 'Task is due',
+        module: 'poller',
+        service: 'keeper',
+        taskId: 42,
+        dueInSeconds: 0,
+      });
+      expect(payload.timestamp).toBeDefined();
+      expect(typeof payload.timestamp).toBe('string');
     });
   });
 
@@ -164,7 +192,7 @@ describe('Logger', () => {
       jest.resetModules();
       const loggerModule = require('../src/logger.js');
       logger = loggerModule.createLogger('test');
-      
+
       // Spy on the raw logger methods
       baseLoggerSpy = {
         trace: jest.spyOn(logger.raw, 'trace').mockImplementation(() => {}),
@@ -220,10 +248,10 @@ describe('Logger', () => {
     it('should return same base logger instance', () => {
       jest.resetModules();
       const { getBaseLogger: freshGetBase } = require('../src/logger.js');
-      
+
       const base1 = freshGetBase();
       const base2 = freshGetBase();
-      
+
       expect(base1).toBe(base2);
     });
   });
@@ -232,20 +260,20 @@ describe('Logger', () => {
     it('should have module binding in child logger', () => {
       jest.resetModules();
       const { createLogger: freshCreateLogger } = require('../src/logger.js');
-      
+
       const logger = freshCreateLogger('poller');
       const bindings = logger.raw.bindings();
-      
+
       expect(bindings.module).toBe('poller');
     });
 
     it('should have different modules for different child loggers', () => {
       jest.resetModules();
       const { createLogger: freshCreateLogger } = require('../src/logger.js');
-      
+
       const pollerLogger = freshCreateLogger('poller');
       const registryLogger = freshCreateLogger('registry');
-      
+
       expect(pollerLogger.raw.bindings().module).toBe('poller');
       expect(registryLogger.raw.bindings().module).toBe('registry');
     });

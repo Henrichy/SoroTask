@@ -1,4 +1,4 @@
-const http = require("http");
+const http = require('http');
 
 /**
  * Metrics store for tracking operational statistics.
@@ -33,7 +33,7 @@ class Metrics {
   }
 
   record(key, value) {
-    if (key === "avgFeePaidXlm") {
+    if (key === 'avgFeePaidXlm') {
       this.feeSamples.push(value);
       if (this.feeSamples.length > this.maxFeeSamples) {
         this.feeSamples.shift();
@@ -50,7 +50,7 @@ class Metrics {
     if (state.lastPollAt) {
       this.lastPollAt = state.lastPollAt;
     }
-    if (typeof state.rpcConnected === "boolean") {
+    if (typeof state.rpcConnected === 'boolean') {
       this.rpcConnected = state.rpcConnected;
     }
   }
@@ -70,7 +70,7 @@ class Metrics {
       now - this.lastPollAt.getTime() > staleThreshold;
 
     return {
-      status: isStale ? "stale" : "ok",
+      status: isStale ? 'stale' : 'ok',
       uptime: uptimeSeconds,
       lastPollAt: this.lastPollAt ? this.lastPollAt.toISOString() : null,
       rpcConnected: this.rpcConnected,
@@ -98,8 +98,8 @@ class MetricsServer {
     this.logger = logger;
     this.port = parseInt(process.env.METRICS_PORT, 10) || 3000;
     this.healthStaleThreshold = parseInt(
-      process.env.HEALTH_STALE_THRESHOLD_MS || "60000",
-      10
+      process.env.HEALTH_STALE_THRESHOLD_MS || '60000',
+      10,
     );
     this.server = null;
     this.metrics = new Metrics();
@@ -107,34 +107,34 @@ class MetricsServer {
 
   start() {
     this.server = http.createServer((req, res) => {
-      if (req.url === "/health" || req.url === "/health/") {
+      if (req.url === '/health' || req.url === '/health/') {
         this.handleHealth(res);
-      } else if (req.url === "/metrics" || req.url === "/metrics/") {
+      } else if (req.url === '/metrics' || req.url === '/metrics/') {
         this.handleMetrics(res);
       } else {
         res.writeHead(404);
-        res.end("Not Found");
+        res.end('Not Found');
       }
     });
 
     this.server.listen(this.port, () => {
       this.logger.info(`Metrics server running on port ${this.port}`);
       this.logger.info(
-        `Health endpoint: http://localhost:${this.port}/health`
+        `Health endpoint: http://localhost:${this.port}/health`,
       );
       this.logger.info(
-        `Metrics endpoint: http://localhost:${this.port}/metrics`
+        `Metrics endpoint: http://localhost:${this.port}/metrics`,
       );
     });
   }
 
   handleHealth(res) {
     const healthStatus = this.metrics.getHealthStatus(
-      this.healthStaleThreshold
+      this.healthStaleThreshold,
     );
-    const httpStatus = healthStatus.status === "stale" ? 503 : 200;
+    const httpStatus = healthStatus.status === 'stale' ? 503 : 200;
 
-    res.writeHead(httpStatus, { "Content-Type": "application/json" });
+    res.writeHead(httpStatus, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(healthStatus, null, 2));
   }
 
@@ -153,7 +153,7 @@ class MetricsServer {
       alertWebhookEnabled: gasConfig.alertWebhookEnabled,
     };
 
-    res.writeHead(200, { "Content-Type": "application/json" });
+    res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(metricsData, null, 2));
   }
 
@@ -172,7 +172,7 @@ class MetricsServer {
   stop() {
     if (this.server) {
       this.server.close();
-      this.logger.info("Metrics server stopped");
+      this.logger.info('Metrics server stopped');
     }
   }
 }

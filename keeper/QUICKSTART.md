@@ -38,6 +38,8 @@ POLLING_INTERVAL_MS=10000
 MAX_CONCURRENT_READS=10
 MAX_CONCURRENT_EXECUTIONS=3
 MAX_TASK_ID=100
+LOG_LEVEL=info
+# LOG_FORMAT=pretty
 ```
 
 ### Getting Your Keeper Secret
@@ -65,18 +67,11 @@ soroban contract deploy \
 npm start
 ```
 
-You should see output like:
+You should see JSON logs like:
 
 ```
-Starting SoroTask Keeper...
-Connected to Soroban RPC: https://rpc-futurenet.stellar.org
-Keeper account: GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-Poller initialized with max concurrent reads: 10
-Starting polling loop with interval: 10000ms
-[Keeper] Running initial poll...
-[Keeper] Initial check: 100 tasks in registry
-[Poller] Current ledger sequence: 12345
-[Poller] Poll complete in 234ms | Checked: 5 | Due: 2 | Skipped: 1 | Errors: 0
+{"level":"info","timestamp":"2026-01-01T12:00:00.000Z","service":"keeper","module":"keeper","message":"Starting SoroTask Keeper"}
+{"level":"info","timestamp":"2026-01-01T12:00:01.000Z","service":"keeper","module":"poller","message":"Task is due","taskId":1}
 ```
 
 ## Step 4: Monitor Execution

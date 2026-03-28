@@ -1,12 +1,12 @@
 /**
  * Structured Logging Module for SoroTask Keeper
- * 
+ *
  * Uses pino for high-performance JSON logging with support for:
  * - Multiple log levels: trace, debug, info, warn, error, fatal
  * - Child loggers with module context
  * - Pretty-printing in development mode
  * - NDJSON output in production
- * 
+ *
  * SECURITY NOTE: Sensitive fields (keypair secrets, private keys, passwords)
  * must NEVER be logged. The logger automatically redacts common sensitive fields.
  */
@@ -29,41 +29,56 @@ const SENSITIVE_FIELDS = [
   'keypair',
 ];
 
-/**
- * Default log level from environment or 'info'
- */
-const DEFAULT_LOG_LEVEL = process.env.LOG_LEVEL || 'info';
+const VALID_LOG_LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'fatal'];
 
-/**
- * Check if running in development mode
- */
-const IS_DEVELOPMENT = process.env.NODE_ENV === 'development';
+function normalizeLogLevel(level) {
+  return VALID_LOG_LEVELS.includes(level) ? level : 'info';
+}
+
+function shouldUsePrettyTransport() {
+  return process.env.LOG_FORMAT === 'pretty';
+}
 
 /**
  * Create the base pino logger instance
- * 
- * In development: Use pretty printing for human-readable output
- * In production: Use NDJSON (newline-delimited JSON) for log aggregation
+ *
+ * JSON is the default output in every environment so logs remain machine-ingestible.
+ * Pretty printing is available only when explicitly requested via LOG_FORMAT=pretty.
  */
-function createBaseLogger() {
-  const options = {
-    level: DEFAULT_LOG_LEVEL,
-    // Base fields included in every log entry
+function createBaseLogger(overrides = {}, destination) {
+  const loggerOptions = {
+    level: normalizeLogLevel(process.env.LOG_LEVEL),
     base: {
+      service: 'keeper',
       pid: process.pid,
     },
-    // Redact sensitive fields
     redact: {
       paths: SENSITIVE_FIELDS,
-      remove: true, // Completely remove sensitive fields rather than replacing with [Redacted]
+      remove: true,
     },
-    // Custom timestamp format (ISO 8601)
-    timestamp: pino.stdTimeFunctions.isoTime,
+    formatters: {
+      bindings(bindings) {
+        return {
+          service: 'keeper',
+          pid: bindings.pid,
+          module: bindings.module,
+        };
+      },
+      level(label) {
+        return { level: label };
+      },
+    },
+    messageKey: 'message',
+    timestamp: () => `,"timestamp":"${new Date().toISOString()}"`,
+    serializers: {
+      err: pino.stdSerializers.err,
+      error: pino.stdSerializers.err,
+    },
+    ...overrides,
   };
 
-  // In development, use pretty printing if pino-pretty is available
-  if (IS_DEVELOPMENT) {
-    options.transport = {
+  if (shouldUsePrettyTransport()) {
+    loggerOptions.transport = loggerOptions.transport || {
       target: 'pino-pretty',
       options: {
         colorize: true,
@@ -74,7 +89,9 @@ function createBaseLogger() {
     };
   }
 
-  return pino(options);
+  const logger = destination ? pino(loggerOptions, destination) : pino(loggerOptions);
+  logger.logFormat = shouldUsePrettyTransport() ? 'pretty' : 'json';
+  return logger;
 }
 
 // Singleton base logger instance
@@ -93,10 +110,10 @@ function getBaseLogger() {
 
 /**
  * Create a child logger with module context
- * 
+ *
  * @param {string} module - Module name (e.g., 'poller', 'executor', 'registry')
  * @returns {Object} Child logger with module context
- * 
+ *
  * @example
  * const logger = createLogger('poller');
  * logger.info('Polling started', { taskCount: 5 });
@@ -104,10 +121,10 @@ function getBaseLogger() {
  */
 function createLogger(module) {
   const parent = getBaseLogger();
-  
+
   // Create child logger with module context
   const child = parent.child({ module });
-  
+
   // Wrap the logger to provide a consistent interface
   return {
     trace: (msg, meta = {}) => {
@@ -145,17 +162,12 @@ function createChildLogger(module) {
 /**
  * Reinitialize the base logger with new options
  * Useful for testing or dynamic configuration changes
- * 
+ *
  * @param {Object} options - Pino options
  */
 function reinitializeLogger(options = {}) {
-  baseLogger = pino({
-    level: options.level || DEFAULT_LOG_LEVEL,
-    base: { pid: process.pid },
-    redact: { paths: SENSITIVE_FIELDS, remove: true },
-    timestamp: pino.stdTimeFunctions.isoTime,
-    ...options,
-  });
+  const { destination, ...loggerOptions } = options;
+  baseLogger = createBaseLogger(loggerOptions, destination);
 }
 
 /**
@@ -182,5 +194,6 @@ module.exports = {
   reinitializeLogger,
   getLogLevel,
   setLogLevel,
+  normalizeLogLevel,
   SENSITIVE_FIELDS,
 };

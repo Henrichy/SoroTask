@@ -1,4 +1,3 @@
-const nodeFetch = require("node-fetch");
 const { createLogger } = require('./logger');
 
 class GasMonitor {
@@ -54,16 +53,16 @@ class GasMonitor {
 
     try {
       const payload = {
-        event: "low_gas",
+        event: 'low_gas',
         taskId: taskId.toString(),
         gasBalance,
         timestamp: new Date().toISOString(),
       };
 
-      const res = await nodeFetch(this.ALERT_WEBHOOK_URL, {
-        method: "POST",
+      const res = await fetch(this.ALERT_WEBHOOK_URL, {
+        method: 'POST',
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify(payload),
       });

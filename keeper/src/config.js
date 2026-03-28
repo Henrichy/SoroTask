@@ -1,21 +1,21 @@
-import dotenv from "dotenv";
+import dotenv from 'dotenv';
 
 dotenv.config();
 
 export function loadConfig() {
   const required = [
-    "SOROBAN_RPC_URL",
-    "NETWORK_PASSPHRASE",
-    "KEEPER_SECRET",
-    "CONTRACT_ID",
-    "POLLING_INTERVAL_MS",
+    'SOROBAN_RPC_URL',
+    'NETWORK_PASSPHRASE',
+    'KEEPER_SECRET',
+    'CONTRACT_ID',
+    'POLLING_INTERVAL_MS',
   ];
 
   const missing = required.filter((key) => !process.env[key]);
 
   if (missing.length > 0) {
     throw new Error(
-      `Missing required environment variables: ${missing.join(", ")}`
+      `Missing required environment variables: ${missing.join(', ')}`,
     );
   }
 

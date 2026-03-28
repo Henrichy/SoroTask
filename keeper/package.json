@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "node index.js | pino-pretty",
+    "dev": "LOG_FORMAT=pretty node index.js",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",

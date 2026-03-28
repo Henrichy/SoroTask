@@ -56,43 +56,45 @@ function classifyError(error) {
   if (!error) return ErrorClassification.NON_RETRYABLE;
 
   const errorCode = error.code || error.errorCode || extractErrorCode(error);
-  const errorMessage = error.message || error.resultXdr || '';
+  const normalizedCode = typeof errorCode === 'string' ? errorCode.toUpperCase() : errorCode;
+  const errorMessage = String(error.message || error.resultXdr || '');
+  const normalizedMessage = errorMessage.toLowerCase();
 
   // Check for duplicate transaction indicators
-  if (DUPLICATE_ERROR_CODES.some(code => 
-    errorCode === code || 
-    errorMessage.includes(code) ||
-    errorMessage.includes('duplicate') ||
-    errorMessage.includes('already in ledger')
+  if (DUPLICATE_ERROR_CODES.some(code =>
+    normalizedCode === code ||
+    normalizedMessage.includes(code.toLowerCase()) ||
+    normalizedMessage.includes('duplicate') ||
+    normalizedMessage.includes('already in ledger'),
   )) {
     return ErrorClassification.DUPLICATE;
   }
 
   // Check for non-retryable errors
-  if (NON_RETRYABLE_ERROR_CODES.some(code => 
-    errorCode === code || 
-    errorMessage.includes(code)
+  if (NON_RETRYABLE_ERROR_CODES.some(code =>
+    normalizedCode === code ||
+    normalizedMessage.includes(code.toLowerCase()),
   )) {
     return ErrorClassification.NON_RETRYABLE;
   }
 
   // Check for retryable errors
-  if (RETRYABLE_ERROR_CODES.some(code => 
-    errorCode === code || 
-    errorMessage.includes(code)
+  if (RETRYABLE_ERROR_CODES.some(code =>
+    normalizedCode === code ||
+    normalizedMessage.includes(code.toLowerCase()),
   )) {
     return ErrorClassification.RETRYABLE;
   }
 
   // Default to retryable for unknown network/transient errors
   // This includes generic network errors, timeouts, etc.
-  if (errorMessage.includes('timeout') ||
-      errorMessage.includes('network') ||
-      errorMessage.includes('ECONNREFUSED') ||
-      errorMessage.includes('ETIMEDOUT') ||
-      errorMessage.includes('ENOTFOUND') ||
-      errorMessage.includes('socket hang up') ||
-      errorMessage.includes('fetch failed')) {
+  if (normalizedMessage.includes('timeout') ||
+      normalizedMessage.includes('network') ||
+      normalizedMessage.includes('econnrefused') ||
+      normalizedMessage.includes('etimedout') ||
+      normalizedMessage.includes('enotfound') ||
+      normalizedMessage.includes('socket hang up') ||
+      normalizedMessage.includes('fetch failed')) {
     return ErrorClassification.RETRYABLE;
   }
 
@@ -127,14 +129,14 @@ function extractErrorCode(error) {
 function calculateDelay(attempt, baseDelay, maxDelay) {
   // Exponential backoff: baseDelay * 2^attempt
   const exponentialDelay = baseDelay * Math.pow(2, attempt);
-  
+
   // Cap at maxDelay
   const cappedDelay = Math.min(exponentialDelay, maxDelay);
-  
+
   // Add jitter: random value between 0 and baseDelay
   // This prevents thundering herd on shared RPC nodes
   const jitter = Math.random() * baseDelay;
-  
+
   return Math.floor(cappedDelay + jitter);
 }
 
@@ -161,7 +163,7 @@ const DEFAULT_OPTIONS = {
 
 /**
  * Generic higher-order async retry wrapper with exponential backoff and jitter
- * 
+ *
  * @param {Function} fn - The async function to wrap
  * @param {Object} options - Retry configuration options
  * @param {number} options.maxRetries - Maximum number of retry attempts (default: 3)
@@ -259,7 +261,7 @@ export async function withRetry(fn, options = {}) {
 /**
  * Legacy retry function for backward compatibility
  * Simple retry with fixed delay
- * 
+ *
  * @param {Function} fn - The async function to retry
  * @param {number} attempts - Maximum number of attempts
  * @param {number} delay - Delay between attempts in milliseconds

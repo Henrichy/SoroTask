@@ -142,7 +142,7 @@ function createExecutor({ logger: customLogger, config } = {}) {
           onDuplicate: () => {
             executorLogger.info('Transaction already accepted (duplicate)', { taskId: task.id });
           },
-        }
+        },
       );
 
       if (retryResult.success) {

@@ -1,12 +1,12 @@
-import pkg from "@stellar/stellar-sdk";
+import pkg from '@stellar/stellar-sdk';
 const { SorobanRpc } = pkg;
 
 export async function createRpc(config, logger) {
   const server = new SorobanRpc.Server(config.rpcUrl, {
-    allowHttp: config.rpcUrl.startsWith("http://"),
+    allowHttp: config.rpcUrl.startsWith('http://'),
   });
 
-  logger.info("Connecting to Soroban RPC...", {
+  logger.info('Connecting to Soroban RPC...', {
     rpcUrl: config.rpcUrl,
   });
 
@@ -19,11 +19,11 @@ export async function createRpc(config, logger) {
       );
     }
 
-    logger.info("Successfully connected to Soroban RPC", {
+    logger.info('Successfully connected to Soroban RPC', {
       networkPassphrase: networkInfo.passphrase,
     });
   } catch (err) {
-    logger.error("Failed to connect to Soroban RPC", {
+    logger.error('Failed to connect to Soroban RPC', {
       error: err.message,
     });
     throw err;

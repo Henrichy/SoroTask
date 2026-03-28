@@ -6,7 +6,7 @@
  */
 
 // Create mock objects at module scope for jest.mock
-const mockWithRetryImpl = jest.fn((fn, options) => fn().then(result => ({
+const mockWithRetryImpl = jest.fn((fn, _options) => fn().then(result => ({
   success: true,
   result,
   attempts: 1,
@@ -44,7 +44,7 @@ describe('Executor', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    
+
     mockConfig = {
       maxRetries: 3,
       retryBaseDelayMs: 1000,
@@ -72,9 +72,9 @@ describe('Executor', () => {
         warn: jest.fn(),
         error: jest.fn(),
       };
-      const executorWithLogger = createExecutor({ 
+      const executorWithLogger = createExecutor({
         logger: customLogger,
-        config: mockConfig 
+        config: mockConfig,
       });
       expect(executorWithLogger).toBeDefined();
     });
@@ -83,9 +83,9 @@ describe('Executor', () => {
   describe('execute', () => {
     it('should execute task successfully', async () => {
       const task = { id: 1, name: 'test-task' };
-      
+
       const result = await executor.execute(task);
-      
+
       expect(result.success).toBe(true);
       expect(result.result).toEqual({ taskId: 1, status: 'executed' });
       expect(result.attempts).toBe(1);
@@ -94,17 +94,17 @@ describe('Executor', () => {
 
     it('should include task ID in result', async () => {
       const task = { id: 42 };
-      
+
       const result = await executor.execute(task);
-      
+
       expect(result.result.taskId).toBe(42);
     });
 
     it('should track execution attempts', async () => {
       const task = { id: 1 };
-      
+
       const result = await executor.execute(task);
-      
+
       expect(result.attempts).toBeGreaterThanOrEqual(1);
       expect(result.retries).toBeGreaterThanOrEqual(0);
     });
@@ -153,23 +153,23 @@ describe('Executor Integration with Retry', () => {
 
   it('should pass correct options to withRetry', async () => {
     const { createExecutor } = require('../src/executor');
-    
-    mockWithRetry.mockImplementation((fn, options) => fn().then(result => ({
+
+    mockWithRetry.mockImplementation((fn, _options) => fn().then(result => ({
       success: true,
       result,
       attempts: 1,
       retries: 0,
     })));
-    
+
     const config = {
       maxRetries: 5,
       retryBaseDelayMs: 500,
       maxRetryDelayMs: 10000,
     };
-    
+
     const executor = createExecutor({ config });
     await executor.execute({ id: 1 });
-    
+
     expect(mockWithRetry).toHaveBeenCalled();
     const options = mockWithRetry.mock.calls[0][1];
     expect(options.maxRetries).toBe(5);
@@ -179,17 +179,17 @@ describe('Executor Integration with Retry', () => {
 
   it('should use default retry options when config not provided', async () => {
     const { createExecutor } = require('../src/executor');
-    
-    mockWithRetry.mockImplementation((fn, options) => fn().then(result => ({
+
+    mockWithRetry.mockImplementation((fn, _options) => fn().then(result => ({
       success: true,
       result,
       attempts: 1,
       retries: 0,
     })));
-    
+
     const executor = createExecutor({});
     await executor.execute({ id: 1 });
-    
+
     const options = mockWithRetry.mock.calls[0][1];
     expect(options.maxRetries).toBe(3);
     expect(options.baseDelayMs).toBe(1000);
@@ -198,7 +198,7 @@ describe('Executor Integration with Retry', () => {
 
   it('should call onRetry callback on retry', async () => {
     const { createExecutor } = require('../src/executor');
-    
+
     const onRetryMock = jest.fn();
     mockWithRetry.mockImplementation((fn, options) => {
       if (options.onRetry) {
@@ -211,16 +211,16 @@ describe('Executor Integration with Retry', () => {
         retries: 0,
       }));
     });
-    
+
     const executor = createExecutor({ config: { maxRetries: 3, onRetry: onRetryMock } });
     await executor.execute({ id: 1 });
-    
+
     expect(mockWithRetry).toHaveBeenCalled();
   });
 
   it('should call onMaxRetries callback when max retries exceeded', async () => {
     const { createExecutor } = require('../src/executor');
-    
+
     mockWithRetry.mockImplementation((fn, options) => {
       if (options.onMaxRetries) {
         options.onMaxRetries(new Error('max retries'), 3);
@@ -232,16 +232,16 @@ describe('Executor Integration with Retry', () => {
         retries: 0,
       }));
     });
-    
+
     const executor = createExecutor({ config: { maxRetries: 3 } });
     await executor.execute({ id: 1 });
-    
+
     expect(mockWithRetry).toHaveBeenCalled();
   });
 
   it('should call onDuplicate callback for duplicate transactions', async () => {
     const { createExecutor } = require('../src/executor');
-    
+
     mockWithRetry.mockImplementation((fn, options) => {
       if (options.onDuplicate) {
         options.onDuplicate();
@@ -253,10 +253,10 @@ describe('Executor Integration with Retry', () => {
         retries: 0,
       }));
     });
-    
+
     const executor = createExecutor({ config: { maxRetries: 3 } });
     await executor.execute({ id: 1 });
-    
+
     expect(mockWithRetry).toHaveBeenCalled();
   });
 });
@@ -282,22 +282,6 @@ describe('executeTask', () => {
   it('executeTask should be callable with correct parameters', async () => {
     // This test verifies that executeTask can be called
     // In a real environment with actual SDK, this would test the full flow
-    const mockServer = {
-      simulateTransaction: jest.fn().mockResolvedValue({ results: [] }),
-      sendTransaction: jest.fn().mockResolvedValue({ hash: 'test123', status: 'PENDING' }),
-      getTransaction: jest.fn().mockResolvedValue({ status: 'SUCCESS' }),
-    };
-    
-    const mockKeypair = {
-      publicKey: jest.fn().mockReturnValue('GPUB123'),
-      sign: jest.fn(),
-    };
-    
-    const mockAccount = {
-      accountId: jest.fn().mockReturnValue('GPUB123'),
-      sequenceNumber: jest.fn().mockReturnValue('1'),
-    };
-    
     // The function should accept these parameters without throwing
     // Actual execution would require real SDK
     expect(() => {
@@ -315,7 +299,7 @@ describe('executeTask', () => {
       feePaid: 100,
       error: null,
     };
-    
+
     expect(mockResult).toMatchObject({
       taskId: expect.any(Number),
       txHash: expect.any(String),
@@ -329,7 +313,7 @@ describe('executeTask', () => {
     // Verify the polling behavior is documented
     const POLL_ATTEMPTS = 30;
     const POLL_INTERVAL_MS = 2000;
-    
+
     expect(POLL_ATTEMPTS).toBe(30);
     expect(POLL_INTERVAL_MS).toBe(2000);
   });

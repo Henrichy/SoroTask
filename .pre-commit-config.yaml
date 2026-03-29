@@ -1,0 +1,25 @@
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.0
+    hooks:
+      - id: gitleaks
+        name: Detect secrets with gitleaks
+        entry: gitleaks detect --source . --verbose
+        language: golang
+        stages: [commit]
+        pass_filenames: false
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: detect-private-key
+        name: Detect private keys
+      - id: check-added-large-files
+        name: Check for large files
+        args: [ '--maxkb=1000' ]
+      - id: check-json
+        name: Check JSON files
+      - id: check-yaml
+        name: Check YAML files
+      - id: check-toml
+        name: Check TOML files

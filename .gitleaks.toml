@@ -1,0 +1,30 @@
+title = "Gitleaks Config for SoroTask"
+
+# Extend the default ruleset
+[extend]
+useDefault = true
+
+# Define custom rules
+[[rules]]
+id = "sorolab-api-key"
+description = "SoroLabs API Key pattern"
+regex = '''(?i)(sorolab[_-]?api[_-]?key|sorolab[_-]?secret)\s*=\s*['\"]?[a-z0-9]{32,}['\"]?'''
+secretGroup = 3
+entropy = 5.0
+
+# Allowlist patterns - files or paths to exclude
+[allowlist]
+description = "Allowlist configuration"
+paths = [
+  # Test fixtures and mocks
+  '''(test_snapshots|__tests__|test|spec)''',
+  # Documentation examples
+  '''(docs|README|CHANGELOG)''',
+  # Config files
+  '''\.(env\.example|env\.template|env\.sample)$''',
+  # Dependencies and build artifacts
+  '''(node_modules|target|dist|build)''',
+]
+
+commits = []
+regexes = []

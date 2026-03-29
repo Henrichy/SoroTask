@@ -1,0 +1,10 @@
+# Gitleaks ignore file for false positives
+# Add patterns or specific exceptions here
+
+# Example format:
+# <commit_hash>:<line_number>:<rule_name>
+
+# Test credentials and fixtures that are intentionally exposed
+# Format: <commit>:<line>:<rule> or <rule_name>
+
+# Add mock keys used in tests or documentation here

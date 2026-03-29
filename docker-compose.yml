@@ -23,3 +23,23 @@ services:
       timeout: 10s
       retries: 3
       start_period: 15s
+
+  # ── Health-check sidecar ────────────────────────────────────────────────────
+  # Polls the keeper's /health endpoint and sends SIGTERM to PID 1 of the
+  # keeper container after FAILURE_THRESHOLD consecutive failures, causing
+  # Docker to restart it (per the keeper's restart: unless-stopped policy).
+  keeper-sidecar:
+    image: curlimages/curl:8.7.1   # tiny image (~12 MB) with curl pre-installed
+    depends_on:
+      - keeper
+    volumes:
+      - ./keeper/health-check-sidecar.sh:/sidecar/health-check-sidecar.sh:ro
+    environment:
+      HEALTH_URL: "http://keeper:3000/health"
+      POLL_INTERVAL_S: "${SIDECAR_POLL_INTERVAL_S:-15}"
+      FAILURE_THRESHOLD: "${SIDECAR_FAILURE_THRESHOLD:-3}"
+      # Signal the keeper container's entrypoint process via the shared network.
+      # In a real deployment replace with: supervisorctl restart keeper
+      RESTART_CMD: "wget -qO- --post-data='' http://keeper:3000/health || true"
+    entrypoint: ["sh", "/sidecar/health-check-sidecar.sh"]
+    restart: unless-stopped

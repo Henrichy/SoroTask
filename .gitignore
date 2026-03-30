@@ -1,5 +1,33 @@
-.DS_Store
+# Existing patterns
 node_modules/
-target/
 .env
-contract/target/
+.env.local
+
+# Coverage reports
+coverage/
+*.lcov
+.nyc_output/
+
+# Rust build artifacts
+target/
+Cargo.lock
+**/*.rs.bk
+
+# Next.js
+.next/
+out/
+dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# CI
+.github/workflows/*.log

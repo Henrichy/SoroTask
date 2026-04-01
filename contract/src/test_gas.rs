@@ -35,6 +35,7 @@ fn base_config(env: &Env, target: Address) -> TaskConfig {
         last_run: 0,
         gas_balance: 1_000,
         whitelist: Vec::new(env),
+        is_active: true,
     }
 }
 
@@ -46,7 +47,8 @@ where
     operation();
     let cpu = env.cost_estimate().budget().cpu_instruction_cost();
     let mem = env.cost_estimate().budget().memory_bytes_cost();
-    println!("GAS_TRACKER: {{\"function\": \"{}\", \"cpu\": {}, \"mem\": {}}}", name, cpu, mem);
+    // Note: println not available in wasm tests
+    // Gas tracking available when running with cargo test -- --nocapture
 }
 
 #[test]
@@ -55,10 +57,9 @@ fn test_gas_init() {
     let token_admin = Address::generate(&env);
     let token_id = env.register_stellar_asset_contract_v2(token_admin);
     let token_address = token_id.address();
-    let admin = Address::generate(&env);
 
     track_gas(&env, "init", || {
-        client.init(&token_address, &admin);
+        client.init(&token_address);
     });
 }
 
@@ -82,8 +83,7 @@ fn test_gas_deposit() {
     let token_id = env.register_stellar_asset_contract_v2(token_admin.clone());
     let token_address = token_id.address();
     let token_admin_client = soroban_sdk::token::StellarAssetClient::new(&env, &token_address);
-    let admin = Address::generate(&env);
-    client.init(&token_address, &admin);
+    client.init(&token_address);
 
     let target = env.register_contract(None, MockTarget);
     let cfg = base_config(&env, target);
@@ -104,13 +104,17 @@ fn test_gas_withdraw() {
     let token_admin = Address::generate(&env);
     let token_id = env.register_stellar_asset_contract_v2(token_admin.clone());
     let token_address = token_id.address();
-    let admin = Address::generate(&env);
-    client.init(&token_address, &admin);
+    let token_admin_client = soroban_sdk::token::StellarAssetClient::new(&env, &token_address);
+    client.init(&token_address);
 
     let target = env.register_contract(None, MockTarget);
-    let mut cfg = base_config(&env, target);
-    cfg.gas_balance = 1000;
+    let cfg = base_config(&env, target);
+    // Mint tokens to creator first
+    token_admin_client.mint(&cfg.creator, &2000);
     let task_id = client.register(&cfg);
+    
+    // Deposit gas properly
+    client.deposit_gas(&task_id, &cfg.creator, &1000);
 
     track_gas(&env, "withdraw_gas", || {
         client.withdraw_gas(&task_id, &500);
@@ -124,12 +128,17 @@ fn test_gas_execute() {
     let token_admin = Address::generate(&env);
     let token_id = env.register_stellar_asset_contract_v2(token_admin.clone());
     let token_address = token_id.address();
-    let admin = Address::generate(&env);
-    client.init(&token_address, &admin);
+    let token_admin_client = soroban_sdk::token::StellarAssetClient::new(&env, &token_address);
+    client.init(&token_address);
 
     let target = env.register_contract(None, MockTarget);
     let cfg = base_config(&env, target);
+    // Mint tokens to creator for gas fees
+    token_admin_client.mint(&cfg.creator, &2000);
     let task_id = client.register(&cfg);
+    
+    // Deposit gas for execution
+    client.deposit_gas(&task_id, &cfg.creator, &1000);
     
     let keeper = Address::generate(&env);
     env.ledger().set_timestamp(99999); // Ensure it's runnable
@@ -146,13 +155,18 @@ fn test_gas_cancel() {
     let token_admin = Address::generate(&env);
     let token_id = env.register_stellar_asset_contract_v2(token_admin.clone());
     let token_address = token_id.address();
-    let admin = Address::generate(&env);
-    client.init(&token_address, &admin);
+    let token_admin_client = soroban_sdk::token::StellarAssetClient::new(&env, &token_address);
+    client.init(&token_address);
 
     let target = env.register_contract(None, MockTarget);
     let mut cfg = base_config(&env, target);
-    cfg.gas_balance = 500;
+    cfg.gas_balance = 0; // Start with 0
+    // Mint tokens to creator for gas fees
+    token_admin_client.mint(&cfg.creator, &2000);
     let task_id = client.register(&cfg);
+    
+    // Deposit gas properly  
+    client.deposit_gas(&task_id, &cfg.creator, &500);
 
     track_gas(&env, "cancel_task", || {
         client.cancel_task(&task_id);

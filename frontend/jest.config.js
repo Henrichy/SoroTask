@@ -31,6 +31,7 @@ const createJestConfig = async () => {
     testMatch: [
       '<rootDir>/src/**/__tests__/**/*.{js,jsx,ts,tsx}',
       '<rootDir>/src/**/*.{spec,test}.{js,jsx,ts,tsx}',
+      '<rootDir>/app/**/*.{spec,test}.{js,jsx,ts,tsx}',
     ],
     moduleNameMapper: {
       '^@/(.*)$': '<rootDir>/src/$1',

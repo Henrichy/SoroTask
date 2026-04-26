@@ -44,9 +44,9 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">95.71% </span>
+                <span class="strong">95.65% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>67/70</span>
+                <span class='fraction'>66/69</span>
             </div>
         
             
@@ -203,9 +203,7 @@
 <a name='L138'></a><a href='#L138'>138</a>
 <a name='L139'></a><a href='#L139'>139</a>
 <a name='L140'></a><a href='#L140'>140</a>
-<a name='L141'></a><a href='#L141'>141</a>
-<a name='L142'></a><a href='#L142'>142</a>
-<a name='L143'></a><a href='#L143'>143</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">2x</span>
+<a name='L141'></a><a href='#L141'>141</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -231,9 +229,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">23x</span>
 <span class="cline-any cline-yes">43x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">23x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -347,8 +343,8 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">2x</span>
-<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">const EventEmitter = require('events');
-const { createConcurrencyLimit } = require('./concurrency');
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">const EventEmitter = require("events");
+const { createConcurrencyLimit } = require("./concurrency");
 &nbsp;
 class ExecutionQueue extends EventEmitter {
   constructor(limit, metricsServer, options = {}) {
@@ -373,15 +369,13 @@ class ExecutionQueue extends EventEmitter {
   }
 &nbsp;
   async enqueue(taskIds, executorFn) {
-    const validTaskIds = taskIds.filter(
-      (id) =&gt; !this.failedTasks.has(id),
-    );
+    const validTaskIds = taskIds.filter((id) =&gt; !this.failedTasks.has(id));
 &nbsp;
     this.depth = validTaskIds.length;
 &nbsp;
     // Track tasks due for this cycle
     if (this.metricsServer) {
-      this.metricsServer.increment('tasksDueTotal', validTaskIds.length);
+      this.metricsServer.increment("tasksDueTotal", validTaskIds.length);
     }
 &nbsp;
     const cycleStartTime = Date.now();
@@ -394,10 +388,10 @@ class ExecutionQueue extends EventEmitter {
           const lockResult = this.idempotencyGuard.acquire(taskId);
           if (!lockResult.acquired) {
             <span class="missing-if-branch" title="if path not taken" >I</span>if (this.metricsServer) {
-<span class="cstat-no" title="statement not covered" >              this.metricsServer.increment('tasksSkippedIdempotencyTotal', 1);</span>
+<span class="cstat-no" title="statement not covered" >              this.metricsServer.increment("tasksSkippedIdempotencyTotal", 1);</span>
             }
-            this.emit('task:skipped', taskId, {
-              reason: 'idempotency_lock',
+            this.emit("task:skipped", taskId, {
+              reason: "idempotency_lock",
               attemptId: lockResult.attemptId,
             });
             return;
@@ -409,9 +403,9 @@ class ExecutionQueue extends EventEmitter {
         this.depth = Math.max(this.depth - 1, 0);
 &nbsp;
         if (attemptContext) {
-          this.emit('task:started', taskId, attemptContext);
+          this.emit("task:started", taskId, attemptContext);
         } else {
-          this.emit('task:started', taskId);
+          this.emit("task:started", taskId);
         }
 &nbsp;
         try {
@@ -422,19 +416,19 @@ class ExecutionQueue extends EventEmitter {
           }
           this.completed++;
           if (this.metricsServer) {
-            this.metricsServer.increment('tasksExecutedTotal', 1);
+            this.metricsServer.increment("tasksExecutedTotal", 1);
           }
           if (this.idempotencyGuard) {
             this.idempotencyGuard.markCompleted(taskId, {
               attemptId: attemptContext?.attemptId,
             });
           }
-          this.emit('task:success', taskId);
+          this.emit("task:success", taskId);
         } catch (error) {
           this.failedCount++;
           this.failedTasks.add(taskId);
           if (this.metricsServer) {
-            this.metricsServer.increment('tasksFailedTotal', 1);
+            this.metricsServer.increment("tasksFailedTotal", 1);
           }
           <span class="missing-if-branch" title="if path not taken" >I</span>if (this.idempotencyGuard) {
 <span class="cstat-no" title="statement not covered" >            this.idempotencyGuard.markFailed(taskId, {</span>
@@ -442,7 +436,7 @@ class ExecutionQueue extends EventEmitter {
               lastError: error.message || String(error),
             });
           }
-          this.emit('task:failed', taskId, error);
+          this.emit("task:failed", taskId, error);
         } finally {
           this.inFlight--;
         }
@@ -458,10 +452,10 @@ class ExecutionQueue extends EventEmitter {
     } finally {
       const cycleDuration = Date.now() - cycleStartTime;
       if (this.metricsServer?.record) {
-        this.metricsServer.record('lastCycleDurationMs', cycleDuration);
+        this.metricsServer.record("lastCycleDurationMs", cycleDuration);
       }
 &nbsp;
-      this.emit('cycle:complete', {
+      this.emit("cycle:complete", {
         depth: this.depth,
         inFlight: this.inFlight,
         completed: this.completed,
@@ -496,7 +490,7 @@ module.exports = { ExecutionQueue };
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-04-26T18:27:17.388Z
+                at 2026-04-26T18:30:56.429Z
             </div>
         <script src="prettify.js"></script>
         <script>

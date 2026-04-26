@@ -11,6 +11,7 @@ const createJestConfig = async () => {
     setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
     collectCoverageFrom: [
       'src/**/*.{js,jsx,ts,tsx}',
+      'app/**/*.{js,jsx,ts,tsx}',
       '!src/**/*.d.ts',
       '!src/**/*.stories.{js,jsx,ts,tsx}',
       '!src/**/__tests__/**',
@@ -31,9 +32,10 @@ const createJestConfig = async () => {
     testMatch: [
       '<rootDir>/src/**/__tests__/**/*.{js,jsx,ts,tsx}',
       '<rootDir>/src/**/*.{spec,test}.{js,jsx,ts,tsx}',
+      '<rootDir>/app/**/*.{spec,test}.{js,jsx,ts,tsx}',
     ],
     moduleNameMapper: {
-      '^@/(.*)$': '<rootDir>/src/$1',
+      '^@/(.*)$': '<rootDir>/$1',
     },
   })
 }

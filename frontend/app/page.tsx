@@ -1,6 +1,120 @@
-import Image from "next/image";
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import { endTimer, startTimer } from "@/lib/perf-monitor";
+
+type TaskRow = {
+  id: string;
+  target: string;
+  keeper: string;
+  status: "Success" | "Failed";
+  timestamp: string;
+};
+
+const INITIAL_TASKS: TaskRow[] = [
+  {
+    id: "#1024",
+    target: "CC...A12B",
+    keeper: "GA...99X",
+    status: "Success",
+    timestamp: "2 mins ago",
+  },
+  {
+    id: "#1025",
+    target: "CC...B31C",
+    keeper: "GA...11P",
+    status: "Failed",
+    timestamp: "5 mins ago",
+  },
+];
 
 export default function Home() {
+  const routeLoadStartedRef = useRef<number | null>(null);
+  const searchStartedRef = useRef<number | null>(null);
+  const [tasks, setTasks] = useState<TaskRow[]>(INITIAL_TASKS);
+  const [search, setSearch] = useState("");
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [isRegistering, setIsRegistering] = useState(false);
+
+  useEffect(() => {
+    routeLoadStartedRef.current = startTimer();
+    const raf = requestAnimationFrame(() => {
+      if (routeLoadStartedRef.current !== null) {
+        endTimer("route_load_ms", routeLoadStartedRef.current, {
+          route: "/",
+        });
+      }
+    });
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  const visibleTasks = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return tasks;
+    return tasks.filter(
+      (task) =>
+        task.id.toLowerCase().includes(query) ||
+        task.target.toLowerCase().includes(query) ||
+        task.keeper.toLowerCase().includes(query) ||
+        task.status.toLowerCase().includes(query)
+    );
+  }, [search, tasks]);
+
+  useEffect(() => {
+    if (searchStartedRef.current === null) return;
+    const startedAt = searchStartedRef.current;
+    const raf = requestAnimationFrame(() => {
+      endTimer("search_latency_ms", startedAt, {
+        queryLength: search.length,
+        resultCount: visibleTasks.length,
+      });
+      searchStartedRef.current = null;
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [search, visibleTasks.length]);
+
+  const selectedTask =
+    visibleTasks.find((task) => task.id === selectedTaskId) ?? null;
+
+  const onOpenTask = (taskId: string) => {
+    const startedAt = startTimer();
+    setSelectedTaskId(taskId);
+    requestAnimationFrame(() => {
+      endTimer("task_open_ms", startedAt, {
+        taskId,
+      });
+    });
+  };
+
+  const onSearch = (value: string) => {
+    searchStartedRef.current = startTimer();
+    setSearch(value);
+  };
+
+  const onRegisterTask = async () => {
+    setIsRegistering(true);
+    const startedAt = startTimer();
+
+    // Simulate the registration request path while backend wiring is pending.
+    await new Promise((resolve) => setTimeout(resolve, 240));
+
+    setTasks((prev) => [
+      {
+        id: `#${1024 + prev.length}`,
+        target: "CC...NEW1",
+        keeper: "GA...PENDING",
+        status: "Success",
+        timestamp: "just now",
+      },
+      ...prev,
+    ]);
+    endTimer("mutation_register_task_ms", startedAt, {
+      mutation: "register_task",
+      optimistic: true,
+    });
+    setIsRegistering(false);
+  };
+
   return (
     <div className="min-h-screen bg-neutral-900 text-neutral-100 font-sans">
       {/* Header */}
@@ -40,8 +154,12 @@ export default function Home() {
                   <input type="number" placeholder="10" className="w-full bg-neutral-900 border border-neutral-700/50 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all font-mono text-sm" />
                 </div>
               </div>
-              <button className="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-3 rounded-lg transition-colors mt-2 shadow-lg shadow-blue-600/20">
-                Register Task
+              <button
+                onClick={onRegisterTask}
+                disabled={isRegistering}
+                className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-medium py-3 rounded-lg transition-colors mt-2 shadow-lg shadow-blue-600/20"
+              >
+                {isRegistering ? "Registering..." : "Register Task"}
               </button>
             </div>
           </section>
@@ -57,7 +175,26 @@ export default function Home() {
 
         {/* Execution Logs */}
         <section className="mt-16 space-y-6">
-          <h2 className="text-2xl font-bold">Execution Logs</h2>
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <h2 className="text-2xl font-bold">Execution Logs</h2>
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => onSearch(e.target.value)}
+              placeholder="Search by id, target, keeper, status"
+              className="w-full md:w-[380px] bg-neutral-900 border border-neutral-700/50 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm"
+            />
+          </div>
+
+          {selectedTask && (
+            <div className="rounded-xl border border-blue-500/40 bg-blue-500/10 p-4 text-sm">
+              <p className="font-medium">Opened Task: {selectedTask.id}</p>
+              <p className="text-neutral-300 mt-1">
+                Target {selectedTask.target}, Keeper {selectedTask.keeper}, Status {selectedTask.status}
+              </p>
+            </div>
+          )}
+
           <div className="overflow-hidden rounded-xl border border-neutral-700/50 shadow-xl">
             <table className="w-full text-left text-sm text-neutral-400">
               <thead className="bg-neutral-800/80 text-neutral-200 backdrop-blur-sm">
@@ -70,18 +207,36 @@ export default function Home() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-800 bg-neutral-900/50">
-                {/* Mock Row */}
-                <tr className="hover:bg-neutral-800/50 transition-colors">
-                  <td className="px-6 py-4 font-mono text-neutral-300">#1024</td>
-                  <td className="px-6 py-4 font-mono">CC...A12B</td>
-                  <td className="px-6 py-4 font-mono">GA...99X</td>
-                  <td className="px-6 py-4">
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-500/10 text-green-400 border border-green-500/20">
-                      Success
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">2 mins ago</td>
-                </tr>
+                {visibleTasks.map((task) => (
+                  <tr
+                    key={task.id}
+                    onClick={() => onOpenTask(task.id)}
+                    className="hover:bg-neutral-800/50 transition-colors cursor-pointer"
+                  >
+                    <td className="px-6 py-4 font-mono text-neutral-300">{task.id}</td>
+                    <td className="px-6 py-4 font-mono">{task.target}</td>
+                    <td className="px-6 py-4 font-mono">{task.keeper}</td>
+                    <td className="px-6 py-4">
+                      <span
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium border ${
+                          task.status === "Success"
+                            ? "bg-green-500/10 text-green-400 border-green-500/20"
+                            : "bg-red-500/10 text-red-400 border-red-500/20"
+                        }`}
+                      >
+                        {task.status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">{task.timestamp}</td>
+                  </tr>
+                ))}
+                {visibleTasks.length === 0 && (
+                  <tr>
+                    <td className="px-6 py-6 text-neutral-500" colSpan={5}>
+                      No logs match your search.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

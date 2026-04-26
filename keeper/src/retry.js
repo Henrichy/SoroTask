@@ -2,59 +2,59 @@
  * Error classifications for retry logic.
  */
 const ErrorClassification = {
-  RETRYABLE: 'retryable',
-  NON_RETRYABLE: 'non_retryable',
-  DUPLICATE: 'duplicate',
-  UNKNOWN: 'unknown',
+  RETRYABLE: "retryable",
+  NON_RETRYABLE: "non_retryable",
+  DUPLICATE: "duplicate",
+  UNKNOWN: "unknown",
 };
 
 /**
  * Soroban/RPC error codes that indicate retryable conditions.
  */
 const RETRYABLE_ERROR_CODES = [
-  'TIMEOUT',
-  'NETWORK_ERROR',
-  'RATE_LIMITED',
-  'SERVER_ERROR',
-  'SERVICE_UNAVAILABLE',
-  'TIMEOUT_ERROR',
-  'TX_BAD_SEQ',
-  'TX_INSUFFICIENT_BALANCE',
-  'TEMPORARY_UNAVAILABLE',
-  'ECONNRESET',
-  'ECONNREFUSED',
-  'ETIMEDOUT',
-  'ENOTFOUND',
-  'EAI_AGAIN',
+  "TIMEOUT",
+  "NETWORK_ERROR",
+  "RATE_LIMITED",
+  "SERVER_ERROR",
+  "SERVICE_UNAVAILABLE",
+  "TIMEOUT_ERROR",
+  "TX_BAD_SEQ",
+  "TX_INSUFFICIENT_BALANCE",
+  "TEMPORARY_UNAVAILABLE",
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "ETIMEDOUT",
+  "ENOTFOUND",
+  "EAI_AGAIN",
 ];
 
 /**
  * Error codes that indicate non-retryable conditions.
  */
 const NON_RETRYABLE_ERROR_CODES = [
-  'INVALID_ARGS',
-  'INSUFFICIENT_GAS',
-  'CONTRACT_PANIC',
-  'INVALID_TRANSACTION',
-  'SIMULATION_FAILED',
-  'VALIDATION_ERROR',
-  'TX_INSUFFICIENT_FEE',
-  'TX_BAD_AUTH',
-  'TX_BAD_AUTH_EXTRA',
-  'TX_TOO_EARLY',
-  'TX_TOO_LATE',
-  'TX_MISSING_OPERATION',
-  'TX_NOT_SUPPORTED',
-  'TX_FAILED',
+  "INVALID_ARGS",
+  "INSUFFICIENT_GAS",
+  "CONTRACT_PANIC",
+  "INVALID_TRANSACTION",
+  "SIMULATION_FAILED",
+  "VALIDATION_ERROR",
+  "TX_INSUFFICIENT_FEE",
+  "TX_BAD_AUTH",
+  "TX_BAD_AUTH_EXTRA",
+  "TX_TOO_EARLY",
+  "TX_TOO_LATE",
+  "TX_MISSING_OPERATION",
+  "TX_NOT_SUPPORTED",
+  "TX_FAILED",
 ];
 
 /**
  * Error codes indicating duplicate transaction (already accepted).
  */
 const DUPLICATE_ERROR_CODES = [
-  'DUPLICATE_TRANSACTION',
-  'TX_ALREADY_IN_LEDGER',
-  'TX_DUPLICATE',
+  "DUPLICATE_TRANSACTION",
+  "TX_ALREADY_IN_LEDGER",
+  "TX_DUPLICATE",
 ];
 
 /**
@@ -65,21 +65,28 @@ const DUPLICATE_ERROR_CODES = [
 function extractErrorCode(error) {
   if (!error) return null;
 
-  if (error.code && typeof error.code === 'string') {
+  if (error.code && typeof error.code === "string") {
     return error.code;
   }
 
-  if (error.errorCode && typeof error.errorCode === 'string') {
+  if (error.errorCode && typeof error.errorCode === "string") {
     return error.errorCode;
   }
 
-  if (error.status && typeof error.status === 'string') {
+  if (error.status && typeof error.status === "string") {
     return error.status;
   }
 
   if (error.resultXdr) {
-    const xdrStr = error.resultXdr.toString ? error.resultXdr.toString() : String(error.resultXdr);
-    const patterns = ['txBadSeq', 'txInsufficientBalance', 'txInsufficientFee', 'txBadAuth'];
+    const xdrStr = error.resultXdr.toString
+      ? error.resultXdr.toString()
+      : String(error.resultXdr);
+    const patterns = [
+      "txBadSeq",
+      "txInsufficientBalance",
+      "txInsufficientFee",
+      "txBadAuth",
+    ];
     for (const pattern of patterns) {
       if (xdrStr.includes(pattern)) return pattern.toUpperCase();
     }
@@ -97,36 +104,50 @@ function classifyError(error) {
   if (!error) return ErrorClassification.UNKNOWN;
 
   const errorCode = extractErrorCode(error);
-  const normalizedCode = typeof errorCode === 'string' ? errorCode.toUpperCase() : '';
-  const normalizedMessage = String(error.message || error.error || error.resultXdr || '').toLowerCase();
+  const normalizedCode =
+    typeof errorCode === "string" ? errorCode.toUpperCase() : "";
+  const normalizedMessage = String(
+    error.message || error.error || error.resultXdr || "",
+  ).toLowerCase();
 
-  if (DUPLICATE_ERROR_CODES.some(code =>
-    normalizedCode === code ||
-    normalizedMessage.includes(code.toLowerCase()) ||
-    normalizedMessage.includes('duplicate') ||
-    normalizedMessage.includes('already in ledger')
-  )) {
+  if (
+    DUPLICATE_ERROR_CODES.some(
+      (code) =>
+        normalizedCode === code ||
+        normalizedMessage.includes(code.toLowerCase()) ||
+        normalizedMessage.includes("duplicate") ||
+        normalizedMessage.includes("already in ledger"),
+    )
+  ) {
     return ErrorClassification.DUPLICATE;
   }
 
-  if (NON_RETRYABLE_ERROR_CODES.some(code =>
-    normalizedCode === code || normalizedMessage.includes(code.toLowerCase())
-  )) {
+  if (
+    NON_RETRYABLE_ERROR_CODES.some(
+      (code) =>
+        normalizedCode === code ||
+        normalizedMessage.includes(code.toLowerCase()),
+    )
+  ) {
     return ErrorClassification.NON_RETRYABLE;
   }
 
-  if (RETRYABLE_ERROR_CODES.some(code =>
-    normalizedCode === code || normalizedMessage.includes(code.toLowerCase())
-  )) {
+  if (
+    RETRYABLE_ERROR_CODES.some(
+      (code) =>
+        normalizedCode === code ||
+        normalizedMessage.includes(code.toLowerCase()),
+    )
+  ) {
     return ErrorClassification.RETRYABLE;
   }
 
   if (
-    normalizedMessage.includes('timeout') ||
-    normalizedMessage.includes('network') ||
-    normalizedMessage.includes('socket hang up') ||
-    normalizedMessage.includes('fetch failed') ||
-    normalizedMessage.includes('temporarily unavailable')
+    normalizedMessage.includes("timeout") ||
+    normalizedMessage.includes("network") ||
+    normalizedMessage.includes("socket hang up") ||
+    normalizedMessage.includes("fetch failed") ||
+    normalizedMessage.includes("temporarily unavailable")
   ) {
     return ErrorClassification.RETRYABLE;
   }
@@ -154,7 +175,7 @@ function calculateDelay(attempt, baseDelay, maxDelay) {
  * @returns {Promise<void>}
  */
 function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 const DEFAULT_OPTIONS = {
@@ -223,7 +244,10 @@ async function withRetry(fn, options = {}) {
         };
       }
 
-      if (classification === ErrorClassification.UNKNOWN && !opts.retryUnknown) {
+      if (
+        classification === ErrorClassification.UNKNOWN &&
+        !opts.retryUnknown
+      ) {
         throw {
           success: false,
           error,
@@ -286,7 +310,7 @@ async function retry(fn, attempts = 3, delay = 1000) {
     maxRetries: attempts - 1,
     baseDelayMs: delay,
     maxDelayMs: delay,
-  }).then(result => result.result);
+  }).then((result) => result.result);
 }
 
 /**

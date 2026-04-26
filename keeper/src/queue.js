@@ -1,5 +1,5 @@
-const EventEmitter = require('events');
-const { createConcurrencyLimit } = require('./concurrency');
+const EventEmitter = require("events");
+const { createConcurrencyLimit } = require("./concurrency");
 
 class ExecutionQueue extends EventEmitter {
   constructor(limit, metricsServer, options = {}) {
@@ -24,15 +24,13 @@ class ExecutionQueue extends EventEmitter {
   }
 
   async enqueue(taskIds, executorFn) {
-    const validTaskIds = taskIds.filter(
-      (id) => !this.failedTasks.has(id),
-    );
+    const validTaskIds = taskIds.filter((id) => !this.failedTasks.has(id));
 
     this.depth = validTaskIds.length;
 
     // Track tasks due for this cycle
     if (this.metricsServer) {
-      this.metricsServer.increment('tasksDueTotal', validTaskIds.length);
+      this.metricsServer.increment("tasksDueTotal", validTaskIds.length);
     }
 
     const cycleStartTime = Date.now();
@@ -45,10 +43,10 @@ class ExecutionQueue extends EventEmitter {
           const lockResult = this.idempotencyGuard.acquire(taskId);
           if (!lockResult.acquired) {
             if (this.metricsServer) {
-              this.metricsServer.increment('tasksSkippedIdempotencyTotal', 1);
+              this.metricsServer.increment("tasksSkippedIdempotencyTotal", 1);
             }
-            this.emit('task:skipped', taskId, {
-              reason: 'idempotency_lock',
+            this.emit("task:skipped", taskId, {
+              reason: "idempotency_lock",
               attemptId: lockResult.attemptId,
             });
             return;
@@ -60,9 +58,9 @@ class ExecutionQueue extends EventEmitter {
         this.depth = Math.max(this.depth - 1, 0);
 
         if (attemptContext) {
-          this.emit('task:started', taskId, attemptContext);
+          this.emit("task:started", taskId, attemptContext);
         } else {
-          this.emit('task:started', taskId);
+          this.emit("task:started", taskId);
         }
 
         try {
@@ -73,19 +71,19 @@ class ExecutionQueue extends EventEmitter {
           }
           this.completed++;
           if (this.metricsServer) {
-            this.metricsServer.increment('tasksExecutedTotal', 1);
+            this.metricsServer.increment("tasksExecutedTotal", 1);
           }
           if (this.idempotencyGuard) {
             this.idempotencyGuard.markCompleted(taskId, {
               attemptId: attemptContext?.attemptId,
             });
           }
-          this.emit('task:success', taskId);
+          this.emit("task:success", taskId);
         } catch (error) {
           this.failedCount++;
           this.failedTasks.add(taskId);
           if (this.metricsServer) {
-            this.metricsServer.increment('tasksFailedTotal', 1);
+            this.metricsServer.increment("tasksFailedTotal", 1);
           }
           if (this.idempotencyGuard) {
             this.idempotencyGuard.markFailed(taskId, {
@@ -93,7 +91,7 @@ class ExecutionQueue extends EventEmitter {
               lastError: error.message || String(error),
             });
           }
-          this.emit('task:failed', taskId, error);
+          this.emit("task:failed", taskId, error);
         } finally {
           this.inFlight--;
         }
@@ -109,10 +107,10 @@ class ExecutionQueue extends EventEmitter {
     } finally {
       const cycleDuration = Date.now() - cycleStartTime;
       if (this.metricsServer?.record) {
-        this.metricsServer.record('lastCycleDurationMs', cycleDuration);
+        this.metricsServer.record("lastCycleDurationMs", cycleDuration);
       }
 
-      this.emit('cycle:complete', {
+      this.emit("cycle:complete", {
         depth: this.depth,
         inFlight: this.inFlight,
         completed: this.completed,

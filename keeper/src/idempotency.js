@@ -1,7 +1,7 @@
-const fs = require('fs');
-const path = require('path');
-const crypto = require('crypto');
-const { createLogger } = require('./logger');
+const fs = require("fs");
+const path = require("path");
+const crypto = require("crypto");
+const { createLogger } = require("./logger");
 
 function parseIntOrDefault(value, fallback) {
   const parsed = parseInt(value, 10);
@@ -10,15 +10,24 @@ function parseIntOrDefault(value, fallback) {
 
 class ExecutionIdempotencyGuard {
   constructor(options = {}) {
-    this.logger = options.logger || createLogger('idempotency');
-    this.lockTtlMs = parseIntOrDefault(options.lockTtlMs || process.env.EXECUTION_LOCK_TTL_MS, 120000);
+    this.logger = options.logger || createLogger("idempotency");
+    this.lockTtlMs = parseIntOrDefault(
+      options.lockTtlMs || process.env.EXECUTION_LOCK_TTL_MS,
+      120000,
+    );
     this.completedTtlMs = parseIntOrDefault(
       options.completedTtlMs || process.env.EXECUTION_COMPLETED_MARKER_TTL_MS,
       30000,
     );
 
-    const stateDir = options.stateDir || process.env.KEEPER_STATE_DIR || path.join(process.cwd(), 'data');
-    this.stateFile = options.stateFile || process.env.IDEMPOTENCY_STATE_FILE || path.join(stateDir, 'execution_locks.json');
+    const stateDir =
+      options.stateDir ||
+      process.env.KEEPER_STATE_DIR ||
+      path.join(process.cwd(), "data");
+    this.stateFile =
+      options.stateFile ||
+      process.env.IDEMPOTENCY_STATE_FILE ||
+      path.join(stateDir, "execution_locks.json");
 
     this.state = { version: 1, locks: {} };
     this._loadState();
@@ -31,16 +40,24 @@ class ExecutionIdempotencyGuard {
         return;
       }
 
-      const raw = fs.readFileSync(this.stateFile, 'utf8');
+      const raw = fs.readFileSync(this.stateFile, "utf8");
       const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object' && parsed.locks && typeof parsed.locks === 'object') {
+      if (
+        parsed &&
+        typeof parsed === "object" &&
+        parsed.locks &&
+        typeof parsed.locks === "object"
+      ) {
         this.state = { version: 1, locks: parsed.locks };
       }
     } catch (error) {
-      this.logger.warn('Failed to load idempotency state file, starting fresh', {
-        stateFile: this.stateFile,
-        error: error.message,
-      });
+      this.logger.warn(
+        "Failed to load idempotency state file, starting fresh",
+        {
+          stateFile: this.stateFile,
+          error: error.message,
+        },
+      );
       this.state = { version: 1, locks: {} };
     }
   }
@@ -55,7 +72,7 @@ class ExecutionIdempotencyGuard {
   }
 
   _newAttemptId(taskId) {
-    const rand = crypto.randomBytes(6).toString('hex');
+    const rand = crypto.randomBytes(6).toString("hex");
     return `task-${taskId}-${Date.now()}-${rand}`;
   }
 
@@ -72,7 +89,7 @@ class ExecutionIdempotencyGuard {
 
     if (removed > 0) {
       this._persistState();
-      this.logger.info('Cleaned up expired idempotency locks', { removed });
+      this.logger.info("Cleaned up expired idempotency locks", { removed });
     }
 
     return removed;
@@ -87,7 +104,7 @@ class ExecutionIdempotencyGuard {
     if (existing) {
       return {
         acquired: false,
-        reason: 'locked',
+        reason: "locked",
         attemptId: existing.attemptId,
         lock: existing,
       };
@@ -97,7 +114,7 @@ class ExecutionIdempotencyGuard {
     const lock = {
       taskId,
       attemptId,
-      status: 'in_progress',
+      status: "in_progress",
       createdAt: now,
       updatedAt: now,
       expiresAt: now + this.lockTtlMs,
@@ -110,7 +127,7 @@ class ExecutionIdempotencyGuard {
 
     return {
       acquired: true,
-      reason: 'acquired',
+      reason: "acquired",
       attemptId,
       lock,
     };
@@ -123,7 +140,7 @@ class ExecutionIdempotencyGuard {
 
     lock.updatedAt = Date.now();
     lock.expiresAt = lock.updatedAt + this.lockTtlMs;
-    lock.status = 'retrying';
+    lock.status = "retrying";
     lock.retries = details.retries != null ? details.retries : lock.retries + 1;
     if (details.lastError) {
       lock.lastError = details.lastError;
@@ -140,7 +157,7 @@ class ExecutionIdempotencyGuard {
 
     const now = Date.now();
     lock.updatedAt = now;
-    lock.status = details.status || 'completed';
+    lock.status = details.status || "completed";
     lock.txHash = details.txHash || lock.txHash || null;
     lock.expiresAt = now + this.completedTtlMs;
 
@@ -155,7 +172,7 @@ class ExecutionIdempotencyGuard {
 
     const now = Date.now();
     lock.updatedAt = now;
-    lock.status = details.status || 'failed';
+    lock.status = details.status || "failed";
     lock.lastError = details.lastError || lock.lastError || null;
     lock.expiresAt = now + this.lockTtlMs;
 

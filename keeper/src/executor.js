@@ -24,14 +24,14 @@ async function pollTransaction(server, txHash) {
   for (let i = 0; i < POLL_ATTEMPTS; i++) {
     const response = await server.getTransaction(txHash);
 
-    if (response.status === SorobanRpc.GetTransactionStatus.SUCCESS) {
+    if (response.status === SorobanRpc.Api.GetTransactionStatus.SUCCESS) {
       const feePaid = response.resultMetaXdr
         ? Number(response.resultMetaXdr?.v3?.()?.sorobanMeta?.()?.ext?.()?.v1?.()?.totalNonRefundableResourceFeeCharged?.()) || 0
         : 0;
       return { status: 'SUCCESS', feePaid };
     }
 
-    if (response.status === SorobanRpc.GetTransactionStatus.FAILED) {
+    if (response.status === SorobanRpc.Api.GetTransactionStatus.FAILED) {
       return { status: 'FAILED', feePaid: 0 };
     }
 

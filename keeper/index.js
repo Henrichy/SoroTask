@@ -9,6 +9,7 @@ const TaskPoller = require('./src/poller');
 const TaskRegistry = require('./src/registry');
 const { createLogger } = require('./src/logger');
 const { dryRunTask } = require('./src/dryRun');
+const { computeAdaptivePollingInterval } = require('./src/adaptiveScheduler');
 
 // Create root logger for the main module
 const logger = createLogger('keeper');
@@ -136,11 +137,20 @@ async function main() {
     });
     await registry.init();
 
-    // Polling loop
-    const pollingIntervalMs = config.pollIntervalMs;
-    logger.info('Starting polling loop', { intervalMs: pollingIntervalMs });
+    // Adaptive polling loop
+    let shutdownRequested = false;
+    let pollingTimer = null;
+    let currentIntervalMs = config.pollIntervalMs;
 
-    const pollingInterval = setInterval(async () => {
+    logger.info('Starting adaptive polling loop', {
+        baseIntervalMs: config.pollIntervalMs,
+        minIntervalMs: config.minPollingIntervalMs,
+        maxIntervalMs: config.maxPollingIntervalMs,
+    });
+
+    const runPollingCycle = async () => {
+        const cycleStartedAt = Date.now();
+
         try {
             logger.info('Starting new polling cycle');
 
@@ -161,17 +171,73 @@ async function main() {
                 logger.info('No tasks due for execution');
             }
 
+            const cycleInsights = poller.getCycleInsights();
+            const decision = computeAdaptivePollingInterval(
+                {
+                    baseIntervalMs: config.pollIntervalMs,
+                    minIntervalMs: config.minPollingIntervalMs,
+                    maxIntervalMs: config.maxPollingIntervalMs,
+                    backlogSize: cycleInsights.backlogSize,
+                    dueCount: cycleInsights.dueCount,
+                    dueSoonCount: cycleInsights.dueSoonCount,
+                    minSecondsUntilDue: cycleInsights.minSecondsUntilDue,
+                    avgRpcLatencyMs: cycleInsights.avgRpcLatencyMs,
+                    cycleDurationMs: cycleInsights.cycleDurationMs,
+                    errors: cycleInsights.errors,
+                },
+                currentIntervalMs,
+            );
+
+            currentIntervalMs = decision.intervalMs;
+            logger.info('Adaptive polling decision', {
+                intervalMs: currentIntervalMs,
+                reasons: decision.reasons,
+                backlogSize: cycleInsights.backlogSize,
+                dueCount: cycleInsights.dueCount,
+                dueSoonCount: cycleInsights.dueSoonCount,
+                minSecondsUntilDue: cycleInsights.minSecondsUntilDue,
+                avgRpcLatencyMs: cycleInsights.avgRpcLatencyMs,
+                cycleDurationMs: cycleInsights.cycleDurationMs,
+            });
+
             logger.info('Polling cycle complete');
 
         } catch (error) {
             logger.error('Error in polling cycle', { error: error.message });
+            const decision = computeAdaptivePollingInterval(
+                {
+                    baseIntervalMs: config.pollIntervalMs,
+                    minIntervalMs: config.minPollingIntervalMs,
+                    maxIntervalMs: config.maxPollingIntervalMs,
+                    backlogSize: 0,
+                    dueCount: 0,
+                    dueSoonCount: 0,
+                    minSecondsUntilDue: null,
+                    avgRpcLatencyMs: 0,
+                    cycleDurationMs: Date.now() - cycleStartedAt,
+                    errors: 1,
+                },
+                currentIntervalMs,
+            );
+            currentIntervalMs = decision.intervalMs;
+            logger.info('Adaptive polling backoff after cycle error', {
+                intervalMs: currentIntervalMs,
+                reasons: decision.reasons,
+            });
         }
-    }, pollingIntervalMs);
+
+        if (!shutdownRequested) {
+            pollingTimer = setTimeout(runPollingCycle, currentIntervalMs);
+        }
+    };
 
     // Graceful shutdown handling
     const shutdown = async (signal) => {
         logger.info('Received shutdown signal, starting graceful shutdown', { signal });
-        clearInterval(pollingInterval);
+        shutdownRequested = true;
+        if (pollingTimer) {
+            clearTimeout(pollingTimer);
+        }
         await queue.drain();
         logger.info('Graceful shutdown complete, exiting');
         process.exit(0);
@@ -182,17 +248,7 @@ async function main() {
 
     // Run first poll immediately
     logger.info('Running initial poll');
-    setTimeout(async () => {
-        try {
-            const taskIds = registry.getTaskIds();
-            const dueTaskIds = await poller.pollDueTasks(taskIds);
-            if (dueTaskIds.length > 0) {
-                await queue.enqueue(dueTaskIds, executeTask);
-            }
-        } catch (error) {
-            logger.error('Error in initial poll', { error: error.message });
-        }
-    }, 1000);
+    pollingTimer = setTimeout(runPollingCycle, 1000);
 }
 
 main().catch((err) => {

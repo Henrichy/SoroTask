@@ -26,6 +26,10 @@ export function loadConfig() {
     contractId: process.env.CONTRACT_ID,
     pollIntervalMs:
       parseInt(process.env.POLLING_INTERVAL_MS, 10) || 10000,
+    minPollingIntervalMs:
+      parseInt(process.env.MIN_POLLING_INTERVAL_MS, 10) || 1000,
+    maxPollingIntervalMs:
+      parseInt(process.env.MAX_POLLING_INTERVAL_MS, 10) || 60000,
     // Retry configuration
     maxRetries: parseInt(process.env.MAX_RETRIES, 10) || 3,
     retryBaseDelayMs: parseInt(process.env.RETRY_BASE_DELAY_MS, 10) || 1000,

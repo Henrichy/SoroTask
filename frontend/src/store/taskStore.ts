@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import type { Task, TaskContent } from "@/src/types/task";
+import type { Task, TaskContent, TaskDependency } from "@/src/types/task";
+import { validateDependency } from "@/src/lib/graphUtils";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -16,6 +17,8 @@ export interface TaskState {
   status: LoadingState;
   /** Last error message, if any */
   error: string | null;
+  /** Dependency edges between tasks */
+  dependencies: TaskDependency[];
 }
 
 export interface TaskActions {
@@ -37,6 +40,12 @@ export interface TaskActions {
   setError: (error: string | null) => void;
   /** Reset store to initial state */
   reset: () => void;
+  /** Add a dependency edge — validates and rejects cycles/duplicates */
+  addDependency: (fromId: string, toId: string) => string | null;
+  /** Remove a dependency edge */
+  removeDependency: (fromId: string, toId: string) => void;
+  /** Replace all dependencies (e.g. after a fetch) */
+  setDependencies: (deps: TaskDependency[]) => void;
 }
 
 export type TaskStore = TaskState & TaskActions;
@@ -49,6 +58,7 @@ const INITIAL_STATE: TaskState = {
   selectedTaskId: null,
   status: "idle",
   error: null,
+  dependencies: [],
 };
 
 // ── Store ─────────────────────────────────────────────────────────────────────
@@ -128,6 +138,28 @@ export const useTaskStore = create<TaskStore>((set) => ({
 
   reset() {
     set(INITIAL_STATE);
+  },
+
+  addDependency(fromId, toId) {
+    let error: string | null = null;
+    set((state) => {
+      const err = validateDependency(fromId, toId, state.dependencies);
+      if (err) { error = err; return state; }
+      return { dependencies: [...state.dependencies, { fromId, toId }] };
+    });
+    return error;
+  },
+
+  removeDependency(fromId, toId) {
+    set((state) => ({
+      dependencies: state.dependencies.filter(
+        (d) => !(d.fromId === fromId && d.toId === toId)
+      ),
+    }));
+  },
+
+  setDependencies(deps) {
+    set({ dependencies: deps });
   },
 }));
 

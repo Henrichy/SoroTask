@@ -33,3 +33,28 @@ export interface Task {
   createdAt: string;
   updatedAt: string;
 }
+
+// ── Dependency graph types ────────────────────────────────────────────────────
+
+/** A directed dependency edge: `from` is blocked by `to` */
+export interface TaskDependency {
+  /** The task that depends on another (the blocked task) */
+  fromId: string;
+  /** The task that must complete first (the blocking task) */
+  toId: string;
+}
+
+/** Graph node shape consumed by the graph component */
+export interface GraphNode {
+  id: string;
+  label: string;
+  /** True when this node is the currently focused/selected task */
+  selected: boolean;
+}
+
+/** Graph edge shape consumed by the graph component */
+export interface GraphEdge {
+  id: string;
+  source: string;
+  target: string;
+}

@@ -36,7 +36,61 @@ pub struct TaskConfig {
 pub enum DataKey {
     Task(u64),
     Counter,
+    ActiveTasks,
     Token,
+}
+
+fn get_active_task_ids(env: &Env) -> Vec<u64> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::ActiveTasks)
+        .unwrap_or_else(|| Vec::new(env))
+}
+
+fn set_active_task_ids(env: &Env, task_ids: &Vec<u64>) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::ActiveTasks, task_ids);
+}
+
+fn add_active_task_id(env: &Env, task_id: u64) {
+    let mut active = get_active_task_ids(env);
+    let len = active.len();
+    let mut i = 0;
+
+    while i < len {
+        if *active
+            .get(i)
+            .expect("active task index out of bounds")
+            == task_id
+        {
+            return;
+        }
+        i += 1;
+    }
+
+    active.push_back(task_id);
+    set_active_task_ids(env, &active);
+}
+
+fn remove_active_task_id(env: &Env, task_id: u64) {
+    let active = get_active_task_ids(env);
+    let mut filtered = Vec::new(env);
+    let len = active.len();
+    let mut i = 0;
+
+    while i < len {
+        let id = active
+            .get(i)
+            .expect("active task index out of bounds")
+            .clone();
+        if id != task_id {
+            filtered.push_back(id);
+        }
+        i += 1;
+    }
+
+    set_active_task_ids(env, &filtered);
 }
 
 #[contracttype]
@@ -83,6 +137,9 @@ impl SoroTaskContract {
             .persistent()
             .set(&DataKey::Task(counter), &config);
 
+        // Add to the active task index for efficient monitoring.
+        add_active_task_id(&env, counter);
+
         // Emit TaskRegistered event
         env.events().publish(
             (Symbol::new(&env, "TaskRegistered"), counter),
@@ -99,21 +156,19 @@ impl SoroTaskContract {
 
     pub fn monitor(env: Env) -> Vec<ExecutableTask> {
         let now = env.ledger().timestamp();
-        let counter: u64 = env
-            .storage()
-            .persistent()
-            .get(&DataKey::Counter)
-            .unwrap_or(0);
-
         let mut executable = Vec::new(&env);
 
-        for task_id in 1..=counter {
-            let maybe_config: Option<TaskConfig> =
-                env.storage().persistent().get(&DataKey::Task(task_id));
+        let active_task_ids = get_active_task_ids(&env);
+        let len = active_task_ids.len();
+        let mut i = 0;
 
-            if let Some(config) = maybe_config {
-                // Check interval
-                if now >= config.last_run + config.interval {
+        while i < len {
+            let task_id = active_task_ids
+                .get(i)
+                .expect("active task index out of bounds")
+                .clone();
+            if let Some(config) = env.storage().persistent().get(&DataKey::Task(task_id)) {
+                if config.is_active && now >= config.last_run + config.interval {
                     executable.push_back(ExecutableTask {
                         task_id,
                         target: config.target,
@@ -122,6 +177,7 @@ impl SoroTaskContract {
                     });
                 }
             }
+            i += 1;
         }
 
         executable
@@ -143,6 +199,8 @@ impl SoroTaskContract {
 
         config.is_active = false;
         env.storage().persistent().set(&task_key, &config);
+
+        remove_active_task_id(&env, task_id);
 
         env.events().publish(
             (Symbol::new(&env, "TaskPaused"), task_id),
@@ -167,6 +225,8 @@ impl SoroTaskContract {
         config.is_active = true;
         env.storage().persistent().set(&task_key, &config);
 
+        add_active_task_id(&env, task_id);
+
         env.events().publish(
             (Symbol::new(&env, "TaskResumed"), task_id),
             config.creator.clone(),
@@ -186,15 +246,33 @@ impl SoroTaskContract {
             return Vec::new(&env);
         }
 
-        let end_id = (start_id + limit - 1).min(counter);
         let mut executable = Vec::new(&env);
+        if start_id == 0 || limit == 0 {
+            return executable;
+        }
 
-        for task_id in start_id..=end_id {
-            let maybe_config: Option<TaskConfig> =
-                env.storage().persistent().get(&DataKey::Task(task_id));
+        let end_id = start_id.saturating_add(limit.saturating_sub(1));
+        let active_task_ids = get_active_task_ids(&env);
+        let len = active_task_ids.len();
+        let mut i = 0;
 
-            if let Some(config) = maybe_config {
-                if now >= config.last_run + config.interval {
+        while i < len {
+            let task_id = active_task_ids
+                .get(i)
+                .expect("active task index out of bounds")
+                .clone();
+
+            if task_id < start_id {
+                i += 1;
+                continue;
+            }
+
+            if task_id > end_id {
+                break;
+            }
+
+            if let Some(config) = env.storage().persistent().get(&DataKey::Task(task_id)) {
+                if config.is_active && now >= config.last_run + config.interval {
                     executable.push_back(ExecutableTask {
                         task_id,
                         target: config.target,
@@ -203,6 +281,8 @@ impl SoroTaskContract {
                     });
                 }
             }
+
+            i += 1;
         }
 
         executable
@@ -415,13 +495,17 @@ impl SoroTaskContract {
             }
         }
 
+        // Remove the task from the active index first to avoid stale scans.
+        remove_active_task_id(&env, task_id);
+
         // Cleanup: Remove the task from storage
         env.storage().persistent().remove(&task_key);
 
-        // Events: TaskCancelled(u64)
+        let refund_amount = config.gas_balance;
+        // Events: TaskCancelled(u64, i128) with data: (creator, amount_refunded)
         env.events().publish(
             (Symbol::new(&env, "TaskCancelled"), task_id),
-            config.creator.clone(),
+            (config.creator.clone(), refund_amount),
         );
     }
 
@@ -1112,8 +1196,97 @@ mod tests {
 
         // Verify event
         let events = env.events().all();
-        // Note: Skipping detailed event assertions due to API changes in soroban-sdk 25.3.0
-        // TODO: Update event assertions when ContractEvents API is stable
+        let mut task_cancelled_found = false;
+        for ev in events {
+            if ev.0 == id { // event from our contract
+                let topics = ev.1.topics();
+                if topics.len() == 2 {
+                    // Check topic0: "TaskCancelled"
+                    if let Some(Symbol::new(&env, "TaskCancelled")) = topics.get(0) {
+                        // Check topic1: task_id
+                        if let Some(task_id_val) = topics.get(1) {
+                            if let Ok(tid) = task_id_val.clone().try_into::<u64>() {
+                                if tid == task_id {
+                                    // Check data: (creator, refund_amount)
+                                    let data = ev.1.data();
+                                    if let Ok((creator, amount)) = data.clone().try_into::<(Address, i128)>() {
+                                        if creator == cfg.creator && amount == 2000 {
+                                            task_cancelled_found = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(task_cancelled_found, "TaskCancelled event not found with expected data");
+    }
+
+    #[test]
+    fn test_monitor_skips_cancelled_tasks() {
+        let (env, id) = setup();
+        let client = SoroTaskContractClient::new(&env, &id);
+
+        let target = env.register_contract(None, MockTarget);
+        let mut task_ids = Vec::new(&env);
+
+        for _ in 0..4 {
+            let task_id = client.register(&base_config(&env, target));
+            task_ids.push_back(task_id);
+        }
+
+        client.cancel_task(&task_ids.get(1).unwrap());
+        env.ledger().set_timestamp(10_000);
+
+        let due = client.monitor();
+        let mut found_ids = Vec::new(&env);
+        for i in 0..due.len() {
+            found_ids.push_back(due.get(i).unwrap().task_id);
+        }
+
+        assert_eq!(found_ids.len(), 3);
+        assert_eq!(found_ids.get(0).unwrap(), &1);
+        assert_eq!(found_ids.get(1).unwrap(), &3);
+        assert_eq!(found_ids.get(2).unwrap(), &4);
+    }
+
+    #[test]
+    fn test_monitor_paginated_skips_cancelled_ids() {
+        let (env, id) = setup();
+        let client = SoroTaskContractClient::new(&env, &id);
+
+        let target = env.register_contract(None, MockTarget);
+        for _ in 0..5 {
+            client.register(&base_config(&env, target));
+        }
+
+        client.cancel_task(&3);
+        env.ledger().set_timestamp(10_000);
+
+        let page = client.monitor_paginated(&2, &2);
+        assert_eq!(page.len(), 1);
+        assert_eq!(page.get(0).unwrap().task_id, 2);
+    }
+
+    #[test]
+    fn test_monitor_skips_paused_tasks_and_resumes() {
+        let (env, id) = setup();
+        let client = SoroTaskContractClient::new(&env, &id);
+
+        let target = env.register_contract(None, MockTarget);
+        let task_id = client.register(&base_config(&env, target));
+
+        client.pause_task(&task_id);
+        env.ledger().set_timestamp(10_000);
+        assert_eq!(client.monitor().len(), 0);
+
+        client.resume_task(&task_id);
+        let resumed = client.monitor();
+        assert_eq!(resumed.len(), 1);
+        assert_eq!(resumed.get(0).unwrap().task_id, task_id);
     }
 }
 

@@ -4,15 +4,26 @@ Welcome to the SoroTask Keeper network! This guide provides step-by-step instruc
 
 See the centralized [Glossary](../GLOSSARY.md) for definitions of domain-specific terms like Keeper, Resolver, and TaskConfig.
 
+## Table of Contents
+
+- [Prerequisites](#prerequisites)
+- [Environment Variables](#environment-variables)
+- [Setup Instructions](#setup-instructions)
+- [Dead-Letter Queue](#dead-letter-queue)
+- [Mock Soroban RPC](#mock-soroban-rpc-for-faster-local-testing)
+- [Docker Deployment](#docker-deployment)
+- [Troubleshooting](#troubleshooting)
+
 ## Prerequisites
 
 Before you begin, ensure you have the following installed on your machine:
+
 - [Node.js](https://nodejs.org/) (v16 or higher)
-- [npm](https://npmjs.com/) 
+- [npm](https://npmjs.com/)
 
 ## Environment Variables
 
-The keeper bot requires certain configuration details to interact with the Stellar/Soroban network. 
+The keeper bot requires certain configuration details to interact with the Stellar/Soroban network.
 Create a `.env` file in the `keeper` directory and configure the following variables:
 
 ```env
@@ -50,12 +61,22 @@ WAIT_FOR_CONFIRMATION=true
 LOG_LEVEL=info
 # Optional: pretty console output for local development only
 # LOG_FORMAT=pretty
+
+# Optional: folder/file for keeper execution idempotency state
+# Default file: ./data/execution_locks.json
+# KEEPER_STATE_DIR=./data
+# IDEMPOTENCY_STATE_FILE=./data/execution_locks.json
+
+# Optional: lock expiration controls (milliseconds)
+# EXECUTION_LOCK_TTL_MS=120000
+# EXECUTION_COMPLETED_MARKER_TTL_MS=30000
 ```
 
 ### Explanation of Variables:
-- **`SOROBAN_RPC_URL`**: This is the endpoint the bot uses to communicate with the network. You can use public nodes provided by Stellar or set up your own. 
+
+- **`SOROBAN_RPC_URL`**: This is the endpoint the bot uses to communicate with the network. You can use public nodes provided by Stellar or set up your own.
 - **`NETWORK_PASSPHRASE`**: This ensures your bot is talking to the right network (e.g., Futurenet, Testnet, or Public Network).
-- **`KEEPER_SECRET`**: Your keeper wallet's secret key. *Keep this private and never commit it to version control (we've ensured `.env` is ignored by git).*
+- **`KEEPER_SECRET`**: Your keeper wallet's secret key. _Keep this private and never commit it to version control (we've ensured `.env` is ignored by git)._
 - **`CONTRACT_ID`**: The deployed SoroTask contract address that the keeper will monitor and execute tasks from.
 - **`POLLING_INTERVAL_MS`**: How often (in milliseconds) the keeper checks for due tasks. Lower values mean more frequent checks but higher RPC usage.
 - **`MAX_CONCURRENT_READS`**: Maximum number of tasks to query in parallel during each poll. Higher values speed up polling but increase RPC load.
@@ -65,6 +86,29 @@ LOG_LEVEL=info
 - **`WAIT_FOR_CONFIRMATION`**: Whether to wait for transaction confirmation after submitting. Set to 'false' for fire-and-forget mode.
 - **`LOG_LEVEL`**: Minimum log severity to emit (`trace`, `debug`, `info`, `warn`, `error`, `fatal`).
 - **`LOG_FORMAT`**: Optional log renderer. Leave unset for JSON logs; set to `pretty` for local human-readable output.
+- **`KEEPER_STATE_DIR` / `IDEMPOTENCY_STATE_FILE`**: Location of persisted execution idempotency locks used to prevent duplicate submissions.
+- **`EXECUTION_LOCK_TTL_MS`**: How long an in-progress execution lock is considered valid before stale recovery allows new work.
+- **`EXECUTION_COMPLETED_MARKER_TTL_MS`**: Short-lived post-success marker to reduce accidental immediate duplicate submissions.
+
+### Dead-Letter Queue Configuration
+
+The keeper includes a Dead-Letter Queue (DLQ) for handling repeatedly failing tasks:
+
+```env
+# Maximum number of failures before a task is quarantined (default: 5)
+DLQ_MAX_FAILURES=5
+
+# Time window for counting failures in milliseconds (default: 3600000 = 1 hour)
+DLQ_FAILURE_WINDOW_MS=3600000
+
+# Enable automatic quarantine of repeatedly failing tasks (default: true)
+DLQ_AUTO_QUARANTINE=true
+
+# Maximum number of dead-letter records to keep (default: 1000)
+DLQ_MAX_RECORDS=1000
+```
+
+The DLQ automatically isolates tasks that fail repeatedly, preventing resource waste and providing diagnostic information for operators. See [Dead-Letter Queue Documentation](./docs/dead-letter-queue.md) for details.
 
 ## Setup Instructions
 
@@ -72,12 +116,14 @@ Once you have your prerequisite software and environment variables ready, follow
 
 1. **Navigate to the Keeper Directory**  
    Open your terminal and navigate to the `keeper` folder if you haven't already:
+
    ```bash
    cd keeper
    ```
 
 2. **Install Dependencies**  
    Run the following command to install the required Node.js packages (`soroban-client`, `dotenv`, and `node-fetch`):
+
    ```bash
    npm install
    ```
@@ -89,6 +135,54 @@ Once you have your prerequisite software and environment variables ready, follow
    ```
 
 If successful, you will see output indicating that the Keeper has started, along with logs of its periodic checks for due tasks!
+
+## Dead-Letter Queue
+
+The keeper includes a Dead-Letter Queue (DLQ) system that automatically handles repeatedly failing tasks:
+
+### What is the Dead-Letter Queue?
+
+The DLQ captures and isolates tasks that fail repeatedly due to:
+- Invalid configuration
+- Broken target contracts
+- Persistent permission problems
+- Insufficient gas balance
+
+### Key Features
+
+- **Automatic Quarantine**: Tasks exceeding failure thresholds are automatically isolated
+- **Diagnostic Context**: Full error history, stack traces, and task configuration preserved
+- **Operator Visibility**: HTTP endpoints and Prometheus metrics for monitoring
+- **Recovery Mechanism**: Manual recovery after issues are resolved
+
+### Inspecting Quarantined Tasks
+
+```bash
+# Get DLQ overview
+curl http://localhost:3000/dead-letter
+
+# Get specific task details
+curl http://localhost:3000/dead-letter/123
+```
+
+### Prometheus Metrics
+
+```
+keeper_quarantined_tasks_count          # Current quarantined tasks
+keeper_tasks_quarantined_total          # Total tasks quarantined
+keeper_tasks_recovered_total            # Total tasks recovered
+keeper_tasks_quarantined_skipped_total  # Tasks skipped due to quarantine
+```
+
+### Demo
+
+Run the interactive demo to see the DLQ in action:
+
+```bash
+node examples/dead-letter-demo.js
+```
+
+For complete documentation, see [Dead-Letter Queue Guide](./docs/dead-letter-queue.md).
 
 ## Mock Soroban RPC for Faster Local Testing
 
@@ -111,16 +205,19 @@ Detailed usage, supported methods, and test examples are in [docs/mock-soroban-r
 ## Troubleshooting
 
 ### Issue: "Account not found"
+
 - **Cause**: The account associated with your `KEEPER_SECRET` does not exist on the network you are trying to use.
 - **Solution**: Fund your keeper account. If you are on Testnet or Futurenet, use the [Stellar Laboratory Friendbot](https://laboratory.stellar.org/#account-creator) to fund the public key associated with your secret. Ensure you've set the correct `NETWORK_PASSPHRASE` and match the network on Stellar Laboratory.
 
 ### Issue: "RPC error" or "Could not connect to server"
+
 - **Cause**: The bot cannot reach the specified RPC endpoint, or the endpoint rejected the request due to rate-limiting or an invalid URL setup.
-- **Solution**: 
+- **Solution**:
   - Double-check your `SOROBAN_RPC_URL` in the `.env` file for any typos. Ensure it includes the proper protocol (e.g., `https://`).
   - If you're using a public RPC, you might be rate-limited. Wait a few moments and try again, or switch to a dedicated/private RPC provider node.
 
 ### Issue: `Error: Cannot find module 'dotenv'` or `Error: Cannot find module 'soroban-client'`
+
 - **Cause**: Application dependencies were not correctly or fully installed.
 - **Solution**: Ensure you ran `npm install` inside the `keeper/` directory correctly. Try clearing cache or removing `node_modules` (`rm -rf node_modules`) and running `npm install` again.
 
@@ -193,4 +290,5 @@ docker compose up -d --build
 ---
 
 ## Need Help?
+
 If you're still running into issues, feel free to open a GitHub issue or reach out to our community channels.

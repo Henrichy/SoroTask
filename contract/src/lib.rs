@@ -15,6 +15,10 @@ pub enum Error {
     TaskPaused = 5,
     TaskAlreadyPaused = 6,
     TaskAlreadyActive = 7,
+    SelfDependency = 8,
+    DependencyNotFound = 9,
+    CircularDependency = 10,
+    DependencyBlocked = 11,
 }
 
 #[contracttype]
@@ -30,6 +34,14 @@ pub struct TaskConfig {
     pub gas_balance: i128,
     pub whitelist: Vec<Address>,
     pub is_active: bool,
+    pub blocked_by: Vec<u64>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct TaskDependency {
+    pub task_id: u64,
+    pub depends_on: u64,
 }
 
 #[contracttype]
@@ -37,6 +49,7 @@ pub enum DataKey {
     Task(u64),
     Counter,
     Token,
+    TaskDependencies(u64),
 }
 
 #[contracttype]
@@ -247,6 +260,11 @@ impl SoroTaskContract {
             return;
         }
 
+        // Check if task is blocked by dependencies
+        if Self::is_task_blocked(env.clone(), task_id) {
+            panic_with_error!(&env, Error::DependencyBlocked);
+        }
+
         // ── Resolver gate ────────────────────────────────────────────────────
         // When a resolver is present we use try_invoke_contract so that an
         // error inside the resolver (panic / wrong return type) degrades
@@ -432,6 +450,159 @@ impl SoroTaskContract {
             .get(&DataKey::Token)
             .expect("Not initialized")
     }
+
+    /// Adds a dependency relationship between tasks.
+    /// task_id will be blocked by depends_on_task_id.
+    pub fn add_dependency(env: Env, task_id: u64, depends_on_task_id: u64) {
+        // Validate both tasks exist
+        let task: TaskConfig = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Task(task_id))
+            .expect("Task not found");
+        
+        let depends_on_task: Option<TaskConfig> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Task(depends_on_task_id));
+        
+        if depends_on_task.is_none() {
+            panic_with_error!(&env, Error::DependencyNotFound);
+        }
+
+        // Only task creator can add dependencies
+        task.creator.require_auth();
+
+        // Prevent self-dependency
+        if task_id == depends_on_task_id {
+            panic_with_error!(&env, Error::SelfDependency);
+        }
+
+        // Check for circular dependencies
+        if Self::would_create_cycle(&env, task_id, depends_on_task_id) {
+            panic_with_error!(&env, Error::CircularDependency);
+        }
+
+        // Get current blocked_by list
+        let mut updated_task = task.clone();
+        if !updated_task.blocked_by.contains(&depends_on_task_id) {
+            updated_task.blocked_by.push_back(depends_on_task_id);
+            env.storage()
+                .persistent()
+                .set(&DataKey::Task(task_id), &updated_task);
+
+            // Emit event
+            env.events().publish(
+                (Symbol::new(&env, "DependencyAdded"), task_id),
+                depends_on_task_id,
+            );
+        }
+    }
+
+    /// Removes a dependency relationship between tasks.
+    pub fn remove_dependency(env: Env, task_id: u64, depends_on_task_id: u64) {
+        let task: TaskConfig = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Task(task_id))
+            .expect("Task not found");
+
+        // Only task creator can remove dependencies
+        task.creator.require_auth();
+
+        let mut updated_task = task.clone();
+        let mut new_blocked_by = Vec::new(&env);
+        
+        for i in 0..updated_task.blocked_by.len() {
+            let dep = updated_task.blocked_by.get(i).unwrap();
+            if dep != depends_on_task_id {
+                new_blocked_by.push_back(dep);
+            }
+        }
+
+        updated_task.blocked_by = new_blocked_by;
+        env.storage()
+            .persistent()
+            .set(&DataKey::Task(task_id), &updated_task);
+
+        // Emit event
+        env.events().publish(
+            (Symbol::new(&env, "DependencyRemoved"), task_id),
+            depends_on_task_id,
+        );
+    }
+
+    /// Gets all dependencies for a task (tasks that block this task).
+    pub fn get_dependencies(env: Env, task_id: u64) -> Vec<u64> {
+        let task: Option<TaskConfig> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Task(task_id));
+        
+        match task {
+            Some(t) => t.blocked_by,
+            None => Vec::new(&env),
+        }
+    }
+
+    /// Checks if a task is blocked by any incomplete dependencies.
+    pub fn is_task_blocked(env: Env, task_id: u64) -> bool {
+        let task: Option<TaskConfig> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Task(task_id));
+        
+        if let Some(t) = task {
+            for i in 0..t.blocked_by.len() {
+                let dep_id = t.blocked_by.get(i).unwrap();
+                let dep_task: Option<TaskConfig> = env
+                    .storage()
+                    .persistent()
+                    .get(&DataKey::Task(dep_id));
+                
+                // If dependency doesn't exist or hasn't run yet, task is blocked
+                if dep_task.is_none() || dep_task.unwrap().last_run == 0 {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Helper to detect circular dependencies using DFS.
+    fn would_create_cycle(env: &Env, task_id: u64, new_dependency: u64) -> bool {
+        let mut visited = Vec::new(env);
+        Self::has_path_to(env, new_dependency, task_id, &mut visited)
+    }
+
+    /// DFS helper to check if there's a path from 'from' to 'to'.
+    fn has_path_to(env: &Env, from: u64, to: u64, visited: &mut Vec<u64>) -> bool {
+        if from == to {
+            return true;
+        }
+
+        if visited.contains(&from) {
+            return false;
+        }
+
+        visited.push_back(from);
+
+        let task: Option<TaskConfig> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Task(from));
+
+        if let Some(t) = task {
+            for i in 0..t.blocked_by.len() {
+                let dep = t.blocked_by.get(i).unwrap();
+                if Self::has_path_to(env, dep, to, visited) {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
 }
 
 // ============================================================================
@@ -530,6 +701,7 @@ mod tests {
             gas_balance: 1_000,
             whitelist: Vec::new(env),
             is_active: true,
+            blocked_by: Vec::new(env),
         }
     }
 
@@ -639,6 +811,7 @@ mod tests {
             gas_balance: 500,
             whitelist: Vec::new(&env),
             is_active: true,
+            blocked_by: Vec::new(&env),
         };
 
         let task_id = client.register(&cfg);
@@ -749,6 +922,7 @@ mod tests {
             gas_balance: 1000,
             whitelist: Vec::new(&env),
             is_active: true,
+            blocked_by: Vec::new(&env),
         };
 
         let task_id = client.register(&config);
@@ -790,6 +964,7 @@ mod tests {
             gas_balance: 1000,
             whitelist: Vec::new(&env),
             is_active: true,
+            blocked_by: Vec::new(&env),
         };
 
         let id1 = client.register(&config);
@@ -821,6 +996,7 @@ mod tests {
             gas_balance: 1000,
             whitelist: Vec::new(&env),
             is_active: true,
+            blocked_by: Vec::new(&env),
         };
 
         let result = client.try_register(&config);
@@ -850,6 +1026,7 @@ mod tests {
             gas_balance: 1000,
             whitelist: Vec::new(&env),
             is_active: true,
+            blocked_by: Vec::new(&env),
         };
 
         let task_id = client.register(&config);
@@ -1114,6 +1291,151 @@ mod tests {
         let events = env.events().all();
         // Note: Skipping detailed event assertions due to API changes in soroban-sdk 25.3.0
         // TODO: Update event assertions when ContractEvents API is stable
+    }
+
+    // ── Dependency Tests ─────────────────────────────────────────────────────
+
+    #[test]
+    fn test_add_dependency() {
+        let (env, id) = setup();
+        let client = SoroTaskContractClient::new(&env, &id);
+
+        let target = env.register_contract(None, MockTarget);
+        let task1_id = client.register(&base_config(&env, target.clone()));
+        let task2_id = client.register(&base_config(&env, target));
+
+        // Add dependency: task2 depends on task1
+        client.add_dependency(&task2_id, &task1_id);
+
+        let deps = client.get_dependencies(&task2_id);
+        assert_eq!(deps.len(), 1);
+        assert_eq!(deps.get(0).unwrap(), task1_id);
+    }
+
+    #[test]
+    fn test_remove_dependency() {
+        let (env, id) = setup();
+        let client = SoroTaskContractClient::new(&env, &id);
+
+        let target = env.register_contract(None, MockTarget);
+        let task1_id = client.register(&base_config(&env, target.clone()));
+        let task2_id = client.register(&base_config(&env, target));
+
+        // Add and then remove dependency
+        client.add_dependency(&task2_id, &task1_id);
+        assert_eq!(client.get_dependencies(&task2_id).len(), 1);
+
+        client.remove_dependency(&task2_id, &task1_id);
+        assert_eq!(client.get_dependencies(&task2_id).len(), 0);
+    }
+
+    #[test]
+    fn test_self_dependency_prevented() {
+        let (env, id) = setup();
+        let client = SoroTaskContractClient::new(&env, &id);
+
+        let target = env.register_contract(None, MockTarget);
+        let task_id = client.register(&base_config(&env, target));
+
+        // Try to add self-dependency
+        let result = client.try_add_dependency(&task_id, &task_id);
+        assert_eq!(
+            result,
+            Err(Ok(soroban_sdk::Error::from_contract_error(
+                Error::SelfDependency as u32
+            )))
+        );
+    }
+
+    #[test]
+    fn test_circular_dependency_prevented() {
+        let (env, id) = setup();
+        let client = SoroTaskContractClient::new(&env, &id);
+
+        let target = env.register_contract(None, MockTarget);
+        let task1_id = client.register(&base_config(&env, target.clone()));
+        let task2_id = client.register(&base_config(&env, target.clone()));
+        let task3_id = client.register(&base_config(&env, target));
+
+        // Create chain: task3 -> task2 -> task1
+        client.add_dependency(&task2_id, &task1_id);
+        client.add_dependency(&task3_id, &task2_id);
+
+        // Try to create cycle: task1 -> task3
+        let result = client.try_add_dependency(&task1_id, &task3_id);
+        assert_eq!(
+            result,
+            Err(Ok(soroban_sdk::Error::from_contract_error(
+                Error::CircularDependency as u32
+            )))
+        );
+    }
+
+    #[test]
+    fn test_task_blocked_by_dependency() {
+        let (env, id) = setup();
+        let client = SoroTaskContractClient::new(&env, &id);
+
+        let target = env.register_contract(None, MockTarget);
+        let task1_id = client.register(&base_config(&env, target.clone()));
+        let task2_id = client.register(&base_config(&env, target));
+
+        // task2 depends on task1
+        client.add_dependency(&task2_id, &task1_id);
+
+        // task2 should be blocked since task1 hasn't run yet
+        assert!(client.is_task_blocked(&task2_id));
+
+        // Execute task1
+        let keeper = Address::generate(&env);
+        set_timestamp(&env, 3600);
+        client.execute(&keeper, &task1_id);
+
+        // Now task2 should not be blocked
+        assert!(!client.is_task_blocked(&task2_id));
+    }
+
+    #[test]
+    fn test_execute_fails_when_blocked() {
+        let (env, id) = setup();
+        let client = SoroTaskContractClient::new(&env, &id);
+
+        let target = env.register_contract(None, MockTarget);
+        let task1_id = client.register(&base_config(&env, target.clone()));
+        let task2_id = client.register(&base_config(&env, target));
+
+        // task2 depends on task1
+        client.add_dependency(&task2_id, &task1_id);
+
+        // Try to execute task2 while blocked
+        let keeper = Address::generate(&env);
+        set_timestamp(&env, 3600);
+        let result = client.try_execute(&keeper, &task2_id);
+        
+        assert_eq!(
+            result,
+            Err(Ok(soroban_sdk::Error::from_contract_error(
+                Error::DependencyBlocked as u32
+            )))
+        );
+    }
+
+    #[test]
+    fn test_dependency_not_found() {
+        let (env, id) = setup();
+        let client = SoroTaskContractClient::new(&env, &id);
+
+        let target = env.register_contract(None, MockTarget);
+        let task_id = client.register(&base_config(&env, target));
+
+        // Try to add dependency on non-existent task
+        let result = client.try_add_dependency(&task_id, &999_u64);
+        assert_eq!(
+            result,
+            Err(Ok(soroban_sdk::Error::from_contract_error(
+                Error::DependencyNotFound as u32
+            )))
+        );
     }
 }
 

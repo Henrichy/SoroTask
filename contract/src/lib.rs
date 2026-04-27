@@ -501,10 +501,11 @@ impl SoroTaskContract {
         // Cleanup: Remove the task from storage
         env.storage().persistent().remove(&task_key);
 
-        // Events: TaskCancelled(u64)
+        let refund_amount = config.gas_balance;
+        // Events: TaskCancelled(u64, i128) with data: (creator, amount_refunded)
         env.events().publish(
             (Symbol::new(&env, "TaskCancelled"), task_id),
-            config.creator.clone(),
+            (config.creator.clone(), refund_amount),
         );
     }
 
@@ -1195,8 +1196,33 @@ mod tests {
 
         // Verify event
         let events = env.events().all();
-        // Note: Skipping detailed event assertions due to API changes in soroban-sdk 25.3.0
-        // TODO: Update event assertions when ContractEvents API is stable
+        let mut task_cancelled_found = false;
+        for ev in events {
+            if ev.0 == id { // event from our contract
+                let topics = ev.1.topics();
+                if topics.len() == 2 {
+                    // Check topic0: "TaskCancelled"
+                    if let Some(Symbol::new(&env, "TaskCancelled")) = topics.get(0) {
+                        // Check topic1: task_id
+                        if let Some(task_id_val) = topics.get(1) {
+                            if let Ok(tid) = task_id_val.clone().try_into::<u64>() {
+                                if tid == task_id {
+                                    // Check data: (creator, refund_amount)
+                                    let data = ev.1.data();
+                                    if let Ok((creator, amount)) = data.clone().try_into::<(Address, i128)>() {
+                                        if creator == cfg.creator && amount == 2000 {
+                                            task_cancelled_found = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(task_cancelled_found, "TaskCancelled event not found with expected data");
     }
 
     #[test]

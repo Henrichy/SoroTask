@@ -32,6 +32,16 @@ class TaskPoller {
       tasksSkipped: 0,
       errors: 0,
     };
+
+    this.lastCycleInsights = {
+      backlogSize: 0,
+      dueCount: 0,
+      dueSoonCount: 0,
+      minSecondsUntilDue: null,
+      avgRpcLatencyMs: 0,
+      cycleDurationMs: 0,
+      errors: 0,
+    };
   }
 
   /**
@@ -48,8 +58,20 @@ class TaskPoller {
     this.stats.tasksSkipped = 0;
     this.stats.errors = 0;
 
+    const rpcLatencies = [];
+    const secondsUntilDueValues = [];
+
     if (!taskIds || taskIds.length === 0) {
       this.logger.info('No tasks to check');
+      this.lastCycleInsights = {
+        backlogSize: 0,
+        dueCount: 0,
+        dueSoonCount: 0,
+        minSecondsUntilDue: null,
+        avgRpcLatencyMs: 0,
+        cycleDurationMs: 0,
+        errors: 0,
+      };
       return [];
     }
 
@@ -64,7 +86,12 @@ class TaskPoller {
 
       // Process tasks in parallel with concurrency control
       const taskChecks = taskIds.map(taskId =>
-        this.readLimit(() => this.checkTask(taskId, currentTimestamp)),
+        this.readLimit(async () => {
+          const startedAt = Date.now();
+          const result = await this.checkTask(taskId, currentTimestamp);
+          rpcLatencies.push(Date.now() - startedAt);
+          return result;
+        }),
       );
 
       const results = await Promise.allSettled(taskChecks);
@@ -83,6 +110,10 @@ class TaskPoller {
             this.stats.tasksSkipped++;
           }
 
+          if (Number.isFinite(result.value.secondsUntilDue)) {
+            secondsUntilDueValues.push(result.value.secondsUntilDue);
+          }
+
           this.stats.tasksChecked++;
         } else if (result.status === 'rejected') {
           this.stats.errors++;
@@ -91,6 +122,23 @@ class TaskPoller {
       });
 
       const duration = Date.now() - startTime;
+
+      const avgRpcLatencyMs = rpcLatencies.length > 0
+        ? Math.round(rpcLatencies.reduce((sum, value) => sum + value, 0) / rpcLatencies.length)
+        : 0;
+      const positiveDueWindows = secondsUntilDueValues.filter(value => value > 0);
+      const dueSoonCount = positiveDueWindows.filter(value => value <= 60).length;
+
+      this.lastCycleInsights = {
+        backlogSize: taskIds.length,
+        dueCount: dueTaskIds.length,
+        dueSoonCount,
+        minSecondsUntilDue: positiveDueWindows.length > 0 ? Math.min(...positiveDueWindows) : null,
+        avgRpcLatencyMs,
+        cycleDurationMs: duration,
+        errors: this.stats.errors,
+      };
+
       this.logPollSummary(duration);
 
       return dueTaskIds;
@@ -139,7 +187,13 @@ class TaskPoller {
         });
       }
 
-      return { isDue, taskId };
+      return {
+        isDue,
+        taskId,
+        secondsUntilDue: Number.isFinite(nextRunTime)
+          ? Math.max(0, nextRunTime - currentTimestamp)
+          : null,
+      };
 
     } catch (error) {
       this.logger.error('Error checking task', { taskId, error: error.message });
@@ -302,6 +356,10 @@ class TaskPoller {
      */
   getStats() {
     return { ...this.stats };
+  }
+
+  getCycleInsights() {
+    return { ...this.lastCycleInsights };
   }
 }
 

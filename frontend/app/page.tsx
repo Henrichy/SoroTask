@@ -325,7 +325,9 @@ export default function Home() {
               </thead>
               <tbody className="divide-y divide-neutral-800 bg-neutral-900/50">
                 <tr className="hover:bg-neutral-800/50 transition-colors">
-                  <td className="px-6 py-4 font-mono text-neutral-300">#1024</td>
+                  <td className="px-6 py-4 font-mono text-neutral-300">
+                    #1024
+                  </td>
                   <td className="px-6 py-4 font-mono">CC...A12B</td>
                   <td className="px-6 py-4 font-mono">GA...99X</td>
                   <td className="px-6 py-4">

@@ -12,6 +12,7 @@ class Metrics {
       tasksDueTotal: 0,
       tasksExecutedTotal: 0,
       tasksFailedTotal: 0,
+      tasksQuarantinedSkipped: 0,
     };
 
     this.gauges = {
@@ -94,9 +95,10 @@ class Metrics {
 }
 
 class MetricsServer {
-  constructor(gasMonitor, logger) {
+  constructor(gasMonitor, logger, deadLetterQueue) {
     this.gasMonitor = gasMonitor;
     this.logger = logger;
+    this.deadLetterQueue = deadLetterQueue;
     this.port = parseInt(process.env.METRICS_PORT, 10) || 3000;
     this.healthStaleThreshold = parseInt(
       process.env.HEALTH_STALE_THRESHOLD_MS || '60000',
@@ -136,6 +138,34 @@ class MetricsServer {
     this.promTasksFailed = new promClient.Counter({
       name: 'keeper_tasks_failed_total',
       help: 'Total number of tasks that failed during execution',
+      registers: [this.register],
+    });
+
+    // Counter: Total tasks skipped due to quarantine
+    this.promTasksQuarantinedSkipped = new promClient.Counter({
+      name: 'keeper_tasks_quarantined_skipped_total',
+      help: 'Total number of tasks skipped because they are quarantined',
+      registers: [this.register],
+    });
+
+    // Gauge: Number of quarantined tasks
+    this.promQuarantinedCount = new promClient.Gauge({
+      name: 'keeper_quarantined_tasks_count',
+      help: 'Current number of tasks in quarantine',
+      registers: [this.register],
+    });
+
+    // Counter: Total tasks quarantined
+    this.promTotalQuarantined = new promClient.Counter({
+      name: 'keeper_tasks_quarantined_total',
+      help: 'Total number of tasks that have been quarantined',
+      registers: [this.register],
+    });
+
+    // Counter: Total tasks recovered from quarantine
+    this.promTotalRecovered = new promClient.Counter({
+      name: 'keeper_tasks_recovered_total',
+      help: 'Total number of tasks recovered from quarantine',
       registers: [this.register],
     });
 
@@ -184,10 +214,19 @@ class MetricsServer {
     this.promTasksDue.inc(0);
     this.promTasksExecuted.inc(0);
     this.promTasksFailed.inc(0);
+    this.promTasksQuarantinedSkipped.inc(0);
 
     this.promAvgFee.set(this.metrics.gauges.avgFeePaidXlm);
     this.promCycleDuration.set(this.metrics.gauges.lastCycleDurationMs);
     this.promLowGasCount.set(this.gasMonitor.getLowGasCount());
+
+    // Sync dead-letter queue metrics
+    if (this.deadLetterQueue) {
+      const dlqStats = this.deadLetterQueue.getStats();
+      this.promQuarantinedCount.set(dlqStats.activeQuarantined);
+      this.promTotalQuarantined.inc(0); // Initialize
+      this.promTotalRecovered.inc(0); // Initialize
+    }
 
     const uptimeSeconds = Math.floor((Date.now() - this.metrics.startTime) / 1000);
     this.promUptime.set(uptimeSeconds);
@@ -202,6 +241,10 @@ class MetricsServer {
         this.handleMetrics(res);
       } else if (req.url === '/metrics/prometheus' || req.url === '/metrics/prometheus/') {
         this.handlePrometheusMetrics(res);
+      } else if (req.url === '/dead-letter' || req.url === '/dead-letter/') {
+        this.handleDeadLetter(res);
+      } else if (req.url.startsWith('/dead-letter/')) {
+        this.handleDeadLetterTask(req, res);
       } else {
         res.writeHead(404);
         res.end('Not Found');
@@ -218,6 +261,9 @@ class MetricsServer {
       );
       this.logger.info(
         `Prometheus endpoint: http://localhost:${this.port}/metrics/prometheus`,
+      );
+      this.logger.info(
+        `Dead-letter queue endpoint: http://localhost:${this.port}/dead-letter`,
       );
     });
   }
@@ -245,6 +291,9 @@ class MetricsServer {
       gasWarnThreshold: gasConfig.gasWarnThreshold,
       alertDebounceMs: gasConfig.alertDebounceMs,
       alertWebhookEnabled: gasConfig.alertWebhookEnabled,
+
+      // Dead-letter queue metrics
+      deadLetterQueue: this.deadLetterQueue ? this.deadLetterQueue.getStats() : null,
     };
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -268,6 +317,67 @@ class MetricsServer {
     }
   }
 
+  handleDeadLetter(res) {
+    if (!this.deadLetterQueue) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Dead-letter queue not enabled' }));
+      return;
+    }
+
+    try {
+      const stats = this.deadLetterQueue.getStats();
+      const records = this.deadLetterQueue.getAllRecords({ limit: 100 });
+
+      const response = {
+        stats,
+        records,
+        quarantinedTasks: this.deadLetterQueue.getQuarantinedTasks(),
+      };
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(response, null, 2));
+    } catch (error) {
+      this.logger.error('Error fetching dead-letter queue data', { error: error.message });
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Internal Server Error' }));
+    }
+  }
+
+  handleDeadLetterTask(req, res) {
+    if (!this.deadLetterQueue) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Dead-letter queue not enabled' }));
+      return;
+    }
+
+    try {
+      // Extract task ID from URL: /dead-letter/123
+      const taskIdStr = req.url.split('/')[2];
+      const taskId = parseInt(taskIdStr, 10);
+
+      if (isNaN(taskId)) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid task ID' }));
+        return;
+      }
+
+      const record = this.deadLetterQueue.getRecord(taskId);
+
+      if (!record) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Task not found in dead-letter queue' }));
+        return;
+      }
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(record, null, 2));
+    } catch (error) {
+      this.logger.error('Error fetching dead-letter task', { error: error.message });
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Internal Server Error' }));
+    }
+  }
+
   updateHealth(state) {
     this.metrics.updateHealth(state);
   }
@@ -284,6 +394,8 @@ class MetricsServer {
       this.promTasksExecuted.inc(amount);
     } else if (key === 'tasksFailedTotal') {
       this.promTasksFailed.inc(amount);
+    } else if (key === 'tasksQuarantinedSkipped') {
+      this.promTasksQuarantinedSkipped.inc(amount);
     }
   }
 

@@ -4,6 +4,16 @@ Welcome to the SoroTask Keeper network! This guide provides step-by-step instruc
 
 See the centralized [Glossary](../GLOSSARY.md) for definitions of domain-specific terms like Keeper, Resolver, and TaskConfig.
 
+## Table of Contents
+
+- [Prerequisites](#prerequisites)
+- [Environment Variables](#environment-variables)
+- [Setup Instructions](#setup-instructions)
+- [Dead-Letter Queue](#dead-letter-queue)
+- [Mock Soroban RPC](#mock-soroban-rpc-for-faster-local-testing)
+- [Docker Deployment](#docker-deployment)
+- [Troubleshooting](#troubleshooting)
+
 ## Prerequisites
 
 Before you begin, ensure you have the following installed on your machine:
@@ -66,6 +76,26 @@ LOG_LEVEL=info
 - **`LOG_LEVEL`**: Minimum log severity to emit (`trace`, `debug`, `info`, `warn`, `error`, `fatal`).
 - **`LOG_FORMAT`**: Optional log renderer. Leave unset for JSON logs; set to `pretty` for local human-readable output.
 
+### Dead-Letter Queue Configuration
+
+The keeper includes a Dead-Letter Queue (DLQ) for handling repeatedly failing tasks:
+
+```env
+# Maximum number of failures before a task is quarantined (default: 5)
+DLQ_MAX_FAILURES=5
+
+# Time window for counting failures in milliseconds (default: 3600000 = 1 hour)
+DLQ_FAILURE_WINDOW_MS=3600000
+
+# Enable automatic quarantine of repeatedly failing tasks (default: true)
+DLQ_AUTO_QUARANTINE=true
+
+# Maximum number of dead-letter records to keep (default: 1000)
+DLQ_MAX_RECORDS=1000
+```
+
+The DLQ automatically isolates tasks that fail repeatedly, preventing resource waste and providing diagnostic information for operators. See [Dead-Letter Queue Documentation](./docs/dead-letter-queue.md) for details.
+
 ## Setup Instructions
 
 Once you have your prerequisite software and environment variables ready, follow these steps on a clean environment:
@@ -89,6 +119,54 @@ Once you have your prerequisite software and environment variables ready, follow
    ```
 
 If successful, you will see output indicating that the Keeper has started, along with logs of its periodic checks for due tasks!
+
+## Dead-Letter Queue
+
+The keeper includes a Dead-Letter Queue (DLQ) system that automatically handles repeatedly failing tasks:
+
+### What is the Dead-Letter Queue?
+
+The DLQ captures and isolates tasks that fail repeatedly due to:
+- Invalid configuration
+- Broken target contracts
+- Persistent permission problems
+- Insufficient gas balance
+
+### Key Features
+
+- **Automatic Quarantine**: Tasks exceeding failure thresholds are automatically isolated
+- **Diagnostic Context**: Full error history, stack traces, and task configuration preserved
+- **Operator Visibility**: HTTP endpoints and Prometheus metrics for monitoring
+- **Recovery Mechanism**: Manual recovery after issues are resolved
+
+### Inspecting Quarantined Tasks
+
+```bash
+# Get DLQ overview
+curl http://localhost:3000/dead-letter
+
+# Get specific task details
+curl http://localhost:3000/dead-letter/123
+```
+
+### Prometheus Metrics
+
+```
+keeper_quarantined_tasks_count          # Current quarantined tasks
+keeper_tasks_quarantined_total          # Total tasks quarantined
+keeper_tasks_recovered_total            # Total tasks recovered
+keeper_tasks_quarantined_skipped_total  # Tasks skipped due to quarantine
+```
+
+### Demo
+
+Run the interactive demo to see the DLQ in action:
+
+```bash
+node examples/dead-letter-demo.js
+```
+
+For complete documentation, see [Dead-Letter Queue Guide](./docs/dead-letter-queue.md).
 
 ## Mock Soroban RPC for Faster Local Testing
 

@@ -9,6 +9,9 @@ const TaskPoller = require('./src/poller');
 const TaskRegistry = require('./src/registry');
 const { createLogger } = require('./src/logger');
 const { dryRunTask } = require('./src/dryRun');
+const { DeadLetterQueue } = require('./src/deadLetter');
+const GasMonitor = require('./src/gasMonitor');
+const { MetricsServer } = require('./src/metrics');
 
 // Create root logger for the main module
 const logger = createLogger('keeper');
@@ -46,6 +49,34 @@ async function main() {
     const { keypair, accountResponse } = keeperData;
     const server = new Server(config.rpcUrl);
 
+    // Initialize gas monitor
+    const gasMonitor = new GasMonitor(server, config.contractId, {
+        logger: createLogger('gas-monitor'),
+    });
+
+    // Initialize dead-letter queue
+    const deadLetterQueue = new DeadLetterQueue({
+        logger: createLogger('dead-letter'),
+    });
+
+    // Set up dead-letter queue event listeners
+    deadLetterQueue.on('task:quarantined', ({ taskId, record }) => {
+        logger.warn('Task quarantined', {
+            taskId,
+            reason: record.reason,
+            failureCount: record.failureCount,
+            errorPattern: record.errorPattern,
+        });
+    });
+
+    deadLetterQueue.on('task:recovered', ({ taskId, recoveryReason }) => {
+        logger.info('Task recovered from quarantine', { taskId, recoveryReason });
+    });
+
+    // Initialize metrics server with dead-letter queue
+    const metricsServer = new MetricsServer(gasMonitor, createLogger('metrics'), deadLetterQueue);
+    metricsServer.start();
+
     // Initialize polling engine with logger
     const poller = new TaskPoller(server, config.contractId, {
         maxConcurrentReads: process.env.MAX_CONCURRENT_READS,
@@ -53,8 +84,12 @@ async function main() {
     });
     logger.info('Poller initialized', { contractId: config.contractId });
 
-    // Initialize execution queue
-    const queue = new ExecutionQueue();
+    // Initialize execution queue with dead-letter queue
+    const queue = new ExecutionQueue(
+        process.env.MAX_CONCURRENT_EXECUTIONS,
+        metricsServer,
+        deadLetterQueue,
+    );
     const queueLogger = createLogger('queue');
 
     queue.on('task:started', (taskId) => queueLogger.info('Started execution', { taskId }));
@@ -119,14 +154,24 @@ async function main() {
                 if (status.status === 'SUCCESS') {
                     logger.info('Task executed successfully', { taskId });
                 } else {
-                    throw new Error(`Transaction failed with status: ${status.status}`);
+                    const error = new Error(`Transaction failed with status: ${status.status}`);
+                    error.txHash = response.hash;
+                    error.phase = 'confirmation';
+                    throw error;
                 }
             }
 
         } catch (error) {
             logger.error('Failed to execute task', { taskId, error: error.message });
+            // Enhance error with additional context for dead-letter queue
+            error.phase = error.phase || 'execution';
             throw error;
         }
+    };
+
+    // Task config getter for dead-letter context
+    const getTaskConfig = async (taskId) => {
+        return await poller.getTaskConfig(taskId);
     };
 
     // Initialize event-driven task registry
@@ -156,7 +201,7 @@ async function main() {
 
             if (dueTaskIds.length > 0) {
                 logger.info('Found due tasks, enqueueing for execution', { dueCount: dueTaskIds.length });
-                await queue.enqueue(dueTaskIds, executeTask);
+                await queue.enqueue(dueTaskIds, executeTask, getTaskConfig);
             } else {
                 logger.info('No tasks due for execution');
             }
@@ -173,6 +218,9 @@ async function main() {
         logger.info('Received shutdown signal, starting graceful shutdown', { signal });
         clearInterval(pollingInterval);
         await queue.drain();
+        if (metricsServer) {
+            metricsServer.stop();
+        }
         logger.info('Graceful shutdown complete, exiting');
         process.exit(0);
     };
@@ -187,7 +235,7 @@ async function main() {
             const taskIds = registry.getTaskIds();
             const dueTaskIds = await poller.pollDueTasks(taskIds);
             if (dueTaskIds.length > 0) {
-                await queue.enqueue(dueTaskIds, executeTask);
+                await queue.enqueue(dueTaskIds, executeTask, getTaskConfig);
             }
         } catch (error) {
             logger.error('Error in initial poll', { error: error.message });

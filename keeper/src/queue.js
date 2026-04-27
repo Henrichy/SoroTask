@@ -2,7 +2,7 @@ const EventEmitter = require('events');
 const { createConcurrencyLimit } = require('./concurrency');
 
 class ExecutionQueue extends EventEmitter {
-  constructor(limit, metricsServer) {
+  constructor(limit, metricsServer, deadLetterQueue) {
     super();
 
     this.concurrencyLimit = parseInt(
@@ -12,6 +12,7 @@ class ExecutionQueue extends EventEmitter {
 
     this.limit = createConcurrencyLimit(this.concurrencyLimit);
     this.metricsServer = metricsServer;
+    this.deadLetterQueue = deadLetterQueue;
 
     this.depth = 0;
     this.inFlight = 0;
@@ -22,10 +23,27 @@ class ExecutionQueue extends EventEmitter {
     this.failedTasks = new Set();
   }
 
-  async enqueue(taskIds, executorFn) {
-    const validTaskIds = taskIds.filter(
-      (id) => !this.failedTasks.has(id),
-    );
+  async enqueue(taskIds, executorFn, taskConfigGetter) {
+    // Filter out quarantined tasks and previously failed tasks
+    const quarantinedTaskIds = [];
+    const validTaskIds = taskIds.filter((id) => {
+      if (this.failedTasks.has(id)) {
+        return false;
+      }
+      
+      // Check if task is quarantined in dead-letter queue
+      if (this.deadLetterQueue && this.deadLetterQueue.isQuarantined(id)) {
+        quarantinedTaskIds.push(id);
+        return false;
+      }
+      
+      return true;
+    });
+
+    // Track quarantined tasks that were filtered out
+    if (quarantinedTaskIds.length > 0 && this.metricsServer) {
+      this.metricsServer.increment('tasksQuarantinedSkipped', quarantinedTaskIds.length);
+    }
 
     this.depth = validTaskIds.length;
 
@@ -43,8 +61,26 @@ class ExecutionQueue extends EventEmitter {
 
         this.emit('task:started', taskId);
 
+        let taskConfig = null;
+        let attempt = 0;
+
         try {
+          // Get task config for dead-letter context if getter provided
+          if (taskConfigGetter) {
+            try {
+              taskConfig = await taskConfigGetter(taskId);
+            } catch (configError) {
+              // Log but don't fail execution if config fetch fails
+              this.emit('task:config-fetch-failed', taskId, configError);
+            }
+          }
+
+          attempt = this.deadLetterQueue 
+            ? this.deadLetterQueue.getFailureCount(taskId) + 1 
+            : 1;
+
           await executorFn(taskId);
+          
           this.completed++;
           if (this.metricsServer) {
             this.metricsServer.increment('tasksExecutedTotal', 1);
@@ -53,9 +89,23 @@ class ExecutionQueue extends EventEmitter {
         } catch (error) {
           this.failedCount++;
           this.failedTasks.add(taskId);
+          
           if (this.metricsServer) {
             this.metricsServer.increment('tasksFailedTotal', 1);
           }
+
+          // Record failure in dead-letter queue
+          if (this.deadLetterQueue) {
+            this.deadLetterQueue.recordFailure(taskId, {
+              error,
+              errorClassification: error.classification || 'retryable',
+              attempt,
+              txHash: error.txHash || null,
+              taskConfig,
+              phase: error.phase || 'execution',
+            });
+          }
+
           this.emit('task:failed', taskId, error);
         } finally {
           this.inFlight--;

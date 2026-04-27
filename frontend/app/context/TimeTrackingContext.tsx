@@ -1,8 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useReducer, useEffect } from 'react';
-import { Task, TimeEntry, ActiveTimer } from '../types';
-
+import { Task, TimeEntry, ActiveTimer } from '../types';import { useHistory } from './history/HistoryContext';
 interface TimeTrackingState {
   tasks: Task[];
   activeTimer: ActiveTimer | null;
@@ -131,6 +130,26 @@ const TimeTrackingContext = createContext<{
 
 export function TimeTrackingProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(timeTrackingReducer, initialState);
+  const { addHistoryEvent } = useHistory();
+
+  const enhancedDispatch = (action: TimeTrackingAction) => {
+    dispatch(action);
+
+    // Add history events based on actions
+    switch (action.type) {
+      case 'ADD_TASK':
+        addHistoryEvent(action.payload.id, 'created', [
+          { field: 'title', oldValue: null, newValue: action.payload.title, fieldType: 'text' },
+          { field: 'description', oldValue: null, newValue: action.payload.description, fieldType: 'text' },
+        ]);
+        break;
+      case 'ADD_TIME_ENTRY':
+        addHistoryEvent(action.payload.taskId, 'time_logged', [
+          { field: 'totalTime', oldValue: null, newValue: action.payload.duration, fieldType: 'number' },
+        ]);
+        break;
+    }
+  };
 
   // Persist to localStorage
   useEffect(() => {
@@ -167,7 +186,7 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
   }, [state]);
 
   return (
-    <TimeTrackingContext.Provider value={{ state, dispatch }}>
+    <TimeTrackingContext.Provider value={{ state, dispatch: enhancedDispatch }}>
       {children}
     </TimeTrackingContext.Provider>
   );

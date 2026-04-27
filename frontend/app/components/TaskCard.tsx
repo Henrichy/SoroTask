@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Task } from '../types';
 import { useTimeTracking } from '../context/TimeTrackingContext';
+import { useHistory } from '../context/history/HistoryContext';
 import { TimeDisplay } from './TimeDisplay';
 import { TimerControls } from './TimerControls';
 import { ManualTimeEntry } from './ManualTimeEntry';
 import { MentionRenderer } from './MentionRenderer';
+import { TaskHistory } from './TaskHistory';
 
 interface TaskCardProps {
   task: Task;
@@ -12,7 +14,9 @@ interface TaskCardProps {
 
 export function TaskCard({ task }: TaskCardProps) {
   const { state } = useTimeTracking();
+  const { addHistoryEvent } = useHistory();
   const [showManualEntry, setShowManualEntry] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
 
   const isActive = state.activeTimer?.taskId === task.id;
@@ -55,12 +59,21 @@ export function TaskCard({ task }: TaskCardProps) {
 
         <div className="flex items-center justify-between">
           <TimerControls taskId={task.id} isActive={isActive} isPaused={isPaused} />
-          <button
-            onClick={() => setShowManualEntry(true)}
-            className="bg-neutral-700 hover:bg-neutral-600 text-white px-3 py-1 rounded text-sm font-medium transition-colors"
-          >
-            Add Time
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowManualEntry(true)}
+              className="bg-neutral-700 hover:bg-neutral-600 text-white px-3 py-1 rounded text-sm font-medium transition-colors"
+            >
+              Add Time
+            </button>
+            <button
+              onClick={() => setShowHistory(true)}
+              className="bg-neutral-700 hover:bg-neutral-600 text-white px-3 py-1 rounded text-sm font-medium transition-colors"
+              title="View History"
+            >
+              📋
+            </button>
+          </div>
         </div>
 
         {task.timeEntries.length > 0 && (
@@ -88,6 +101,12 @@ export function TaskCard({ task }: TaskCardProps) {
       {showManualEntry && (
         <ManualTimeEntry taskId={task.id} onClose={() => setShowManualEntry(false)} />
       )}
+
+      <TaskHistory
+        taskId={task.id}
+        isOpen={showHistory}
+        onClose={() => setShowHistory(false)}
+      />
     </>
   );
 }

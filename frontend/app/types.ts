@@ -7,6 +7,7 @@ export interface Task {
   createdAt: Date;
   totalTime: number; // in seconds
   timeEntries: TimeEntry[];
+  history?: HistoryEvent[];
 }
 
 export interface TimeEntry {
@@ -17,6 +18,33 @@ export interface TimeEntry {
   duration: number; // in seconds
   isManual: boolean;
   description?: string;
+}
+
+export interface HistoryEvent {
+  id: string;
+  taskId: string;
+  timestamp: Date;
+  actor: string; // user ID or "System"
+  actorName: string; // display name
+  eventType: HistoryEventType;
+  changes: FieldChange[];
+  description?: string;
+}
+
+export type HistoryEventType =
+  | 'created'
+  | 'field_changed'
+  | 'time_logged'
+  | 'comment_added'
+  | 'status_changed'
+  | 'assigned'
+  | 'unassigned';
+
+export interface FieldChange {
+  field: string;
+  oldValue: any;
+  newValue: any;
+  fieldType: 'text' | 'number' | 'boolean' | 'date' | 'reference';
 }
 
 export interface ActiveTimer {

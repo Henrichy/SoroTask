@@ -17,7 +17,10 @@
     "lint:fix": "eslint src/ __tests__/ --fix",
     "docker:build": "docker build -t sorotask-keeper .",
     "docker:run": "docker run --env-file .env -p 3000:3000 -v $(pwd)/data:/app/data sorotask-keeper",
-    "bench": "node benchmarks/poller.bench.js"
+    "bench": "node benchmarks/poller.bench.js && node benchmarks/executor.bench.js",
+    "bench:poller": "node benchmarks/poller.bench.js",
+    "bench:executor": "node benchmarks/executor.bench.js",
+    "bench:compare": "node benchmarks/compare.js"
   },
   "keywords": [
     "soroban",

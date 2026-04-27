@@ -24,7 +24,7 @@ async function pollTransaction(server, txHash) {
   for (let i = 0; i < POLL_ATTEMPTS; i++) {
     const response = await server.getTransaction(txHash);
 
-    if (response.status === SorobanRpc.GetTransactionStatus.SUCCESS) {
+    if (response.status === SorobanRpc.Api.GetTransactionStatus.SUCCESS) {
       const feePaid = response.resultMetaXdr
         ? Number(
             response.resultMetaXdr

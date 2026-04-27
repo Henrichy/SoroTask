@@ -9,6 +9,8 @@ const TaskPoller = require('./src/poller');
 const TaskRegistry = require('./src/registry');
 const { createLogger } = require('./src/logger');
 const { dryRunTask } = require('./src/dryRun');
+const { GasMonitor } = require('./src/gasMonitor');
+const { MetricsServer } = require('./src/metrics');
 
 // Create root logger for the main module
 const logger = createLogger('keeper');
@@ -45,6 +47,15 @@ async function main() {
 
     const { keypair, accountResponse } = keeperData;
     const server = new Server(config.rpcUrl);
+
+    // Initialize gas monitor with forecaster
+    const gasMonitor = new GasMonitor(logger);
+    logger.info('Gas monitor initialized with forecaster');
+
+    // Initialize metrics server
+    const metricsServer = new MetricsServer(gasMonitor, logger);
+    metricsServer.start();
+    logger.info('Metrics server started');
 
     // Initialize polling engine with logger
     const poller = new TaskPoller(server, config.contractId, {
@@ -118,6 +129,16 @@ async function main() {
 
                 if (status.status === 'SUCCESS') {
                     logger.info('Task executed successfully', { taskId });
+
+                    // Extract and record gas fee for forecasting
+                    const feePaid = status.resultMetaXdr
+                        ? Number(status.resultMetaXdr?.v3?.()?.sorobanMeta?.()?.ext?.()?.v1?.()?.totalNonRefundableResourceFeeCharged?.()) || 0
+                        : 0;
+
+                    if (feePaid > 0) {
+                        gasMonitor.recordExecution(taskId, feePaid);
+                        logger.info('Execution cost recorded for forecasting', { taskId, feePaid });
+                    }
                 } else {
                     throw new Error(`Transaction failed with status: ${status.status}`);
                 }
@@ -173,6 +194,7 @@ async function main() {
         logger.info('Received shutdown signal, starting graceful shutdown', { signal });
         clearInterval(pollingInterval);
         await queue.drain();
+        metricsServer.stop();
         logger.info('Graceful shutdown complete, exiting');
         process.exit(0);
     };

@@ -281,10 +281,10 @@ class TaskPoller {
   }
 
   /**
-     * Log a summary of the polling cycle.
-     *
-     * @param {number} duration - Duration of the poll in milliseconds
-     */
+   * Log a summary of the polling cycle.
+   *
+   * @param {number} duration - Duration of the poll in milliseconds
+   */
   logPollSummary(duration) {
     this.logger.info('Poll complete', {
       durationMs: duration,
@@ -296,10 +296,43 @@ class TaskPoller {
   }
 
   /**
-     * Get current polling statistics.
-     *
-     * @returns {Object} Current statistics
-     */
+   * Check gas forecast for a task before execution (optional enhancement).
+   * Can be used to warn about potential underfunded conditions.
+   *
+   * @param {number} taskId
+   * @param {object} taskConfig
+   * @param {object} gasMonitor - GasMonitor instance with forecaster
+   * @returns {object|null} Forecast data if available
+   */
+  checkForecast(taskId, taskConfig, gasMonitor) {
+    if (!gasMonitor) {
+      return null;
+    }
+
+    try {
+      const forecast = gasMonitor.getForecast(taskId, taskConfig.gas_balance);
+
+      if (forecast.confidence === 'high' && forecast.isUnderfunded) {
+        this.logger.warn('Task forecast: High-risk underfunded execution', {
+          taskId,
+          estimatedCost: forecast.estimatedCost,
+          gasBalance: taskConfig.gas_balance,
+          recommendedBalance: forecast.recommendedBalance,
+        });
+      }
+
+      return forecast;
+    } catch (error) {
+      this.logger.debug('Error checking forecast', { taskId, error: error.message });
+      return null;
+    }
+  }
+
+  /**
+   * Get current polling statistics.
+   *
+   * @returns {Object} Current statistics
+   */
   getStats() {
     return { ...this.stats };
   }

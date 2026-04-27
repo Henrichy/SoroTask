@@ -174,6 +174,34 @@ class MetricsServer {
       registers: [this.register],
     });
 
+    // Gauge: Forecast - underfunded tasks
+    this.promUnderfundedTasks = new promClient.Gauge({
+      name: 'keeper_forecast_underfunded_tasks',
+      help: 'Number of tasks forecasted to be underfunded',
+      registers: [this.register],
+    });
+
+    // Gauge: Forecast - high confidence forecasts
+    this.promHighConfidenceForecasts = new promClient.Gauge({
+      name: 'keeper_forecast_high_confidence',
+      help: 'Number of tasks with high-confidence gas forecasts',
+      registers: [this.register],
+    });
+
+    // Gauge: Forecast - low confidence forecasts
+    this.promLowConfidenceForecasts = new promClient.Gauge({
+      name: 'keeper_forecast_low_confidence',
+      help: 'Number of tasks with low-confidence gas forecasts',
+      registers: [this.register],
+    });
+
+    // Gauge: Forecast - risk level (0=low, 1=medium, 2=high)
+    this.promForecastRiskLevel = new promClient.Gauge({
+      name: 'keeper_forecast_risk_level',
+      help: 'Current forecast risk level (0=low, 1=medium, 2=high)',
+      registers: [this.register],
+    });
+
     // Add default metrics (process CPU, memory, etc.)
     promClient.collectDefaultMetrics({ register: this.register });
   }
@@ -192,6 +220,9 @@ class MetricsServer {
     const uptimeSeconds = Math.floor((Date.now() - this.metrics.startTime) / 1000);
     this.promUptime.set(uptimeSeconds);
     this.promRpcConnected.set(this.metrics.rpcConnected ? 1 : 0);
+
+    // Note: Forecast metrics will be updated when forecast queries are made
+    // This is to avoid performance overhead of computing forecasts on every metrics sync
   }
 
   start() {
@@ -202,6 +233,8 @@ class MetricsServer {
         this.handleMetrics(res);
       } else if (req.url === '/metrics/prometheus' || req.url === '/metrics/prometheus/') {
         this.handlePrometheusMetrics(res);
+      } else if (req.url === '/metrics/forecast' || req.url === '/metrics/forecast/') {
+        this.handleForecast(res);
       } else {
         res.writeHead(404);
         res.end('Not Found');
@@ -219,6 +252,9 @@ class MetricsServer {
       this.logger.info(
         `Prometheus endpoint: http://localhost:${this.port}/metrics/prometheus`,
       );
+      this.logger.info(
+        `Forecast endpoint: http://localhost:${this.port}/metrics/forecast`,
+      );
     });
   }
 
@@ -235,6 +271,7 @@ class MetricsServer {
   handleMetrics(res) {
     const gasConfig = this.gasMonitor.getConfig();
     const taskMetrics = this.metrics.snapshot();
+    const forecasterState = this.gasMonitor.getForecasterState();
 
     const metricsData = {
       // Task execution metrics
@@ -245,10 +282,30 @@ class MetricsServer {
       gasWarnThreshold: gasConfig.gasWarnThreshold,
       alertDebounceMs: gasConfig.alertDebounceMs,
       alertWebhookEnabled: gasConfig.alertWebhookEnabled,
+
+      // Forecasting metrics
+      forecasting: {
+        enabled: gasConfig.forecastingEnabled,
+        safetyBuffer: gasConfig.forecastSafetyBuffer,
+        aggregationWindowSeconds: gasConfig.forecastAggregationWindow,
+        trackedTasks: forecasterState.trackedTasks,
+        totalHistoricalSamples: forecasterState.totalHistoricalSamples,
+      },
     };
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(metricsData, null, 2));
+  }
+
+  /**
+   * Handle forecast endpoint: GET /metrics/forecast
+   * Returns forecaster state and configuration.
+   */
+  handleForecast(res) {
+    const forecastData = this.gasMonitor.getForecasterState();
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(forecastData, null, 2));
   }
 
   async handlePrometheusMetrics(res) {

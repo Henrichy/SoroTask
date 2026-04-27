@@ -1,9 +1,10 @@
 'use client';
 
-import Image from "next/image";
 import { useState } from "react";
 import Calendar from "@/components/Calendar";
 import TaskDetail from "@/components/TaskDetail";
+import LocaleSwitcher from "@/components/LocaleSwitcher";
+import { useTranslation, useFormatting, useLocale } from "@/hooks/useI18n";
 import { Task } from "@/types/task";
 import { addDays } from "@/lib/dateUtils";
 

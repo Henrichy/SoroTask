@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { HistoryProvider } from './context/history/HistoryContext';
+import { LayoutProvider } from './context/LayoutContext';
 import { MentionsProvider } from "./context/mentions/MentionsContext";
 import { GlobalTimerIndicator } from "./components/GlobalTimerIndicator";
 
@@ -31,12 +32,14 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <HistoryProvider>
-          <MentionsProvider>
-            <TimeTrackingProvider>
-              {children}
-              <GlobalTimerIndicator />
-            </TimeTrackingProvider>
-          </MentionsProvider>
+          <LayoutProvider>
+            <MentionsProvider>
+              <TimeTrackingProvider>
+                {children}
+                <GlobalTimerIndicator />
+              </TimeTrackingProvider>
+            </MentionsProvider>
+          </LayoutProvider>
         </HistoryProvider>
       </body>
     </html>

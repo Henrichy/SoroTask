@@ -4,10 +4,17 @@ import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+interface ProviderConfig {
+  name: string;
+  icon: React.ReactNode;
+  color: string;
+  description: string;
+}
+
 export default function SettingsPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
-  const [isUnlinking, setIsUnlinking] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
 
   if (status === "loading") {
     return (
@@ -22,7 +29,7 @@ export default function SettingsPage() {
     return null;
   }
 
-  const providerInfo: Record<string, { name: string; icon: React.ReactNode; color: string }> = {
+  const providerInfo: Record<string, ProviderConfig> = {
     github: {
       name: "GitHub",
       icon: (
@@ -31,6 +38,7 @@ export default function SettingsPage() {
         </svg>
       ),
       color: "bg-neutral-800",
+      description: "Sign in with your GitHub account"
     },
     google: {
       name: "Google",
@@ -55,6 +63,7 @@ export default function SettingsPage() {
         </svg>
       ),
       color: "bg-white",
+      description: "Sign in with your Google account"
     },
     email: {
       name: "Email",
@@ -64,6 +73,7 @@ export default function SettingsPage() {
         </svg>
       ),
       color: "bg-blue-500",
+      description: "Sign in with email and password"
     },
   };
 
@@ -71,7 +81,27 @@ export default function SettingsPage() {
   const providerData = providerInfo[currentProvider] || providerInfo.email;
 
   const handleSignOut = async () => {
-    await signOut({ callbackUrl: "/" });
+    setIsSigningOut(true);
+    try {
+      await signOut({ callbackUrl: "/" });
+    } catch (error) {
+      setIsSigningOut(false);
+    }
+  };
+
+  const getProviderStatus = (provider: string) => {
+    if (provider === currentProvider) {
+      return {
+        status: 'connected',
+        label: 'Active',
+        color: 'bg-green-500/10 text-green-400 border-green-500/20'
+      };
+    }
+    return {
+      status: 'disconnected',
+      label: 'Not Connected',
+      color: 'bg-neutral-500/10 text-neutral-400 border-neutral-500/20'
+    };
   };
 
   return (
@@ -131,26 +161,49 @@ export default function SettingsPage() {
         <div className="bg-neutral-800/50 border border-neutral-700/50 rounded-xl p-6 shadow-xl mb-6">
           <h2 className="text-xl font-semibold mb-4">Connected Providers</h2>
           <div className="space-y-3">
-            <div className="flex items-center justify-between p-4 bg-neutral-900/50 rounded-lg border border-neutral-700/50">
-              <div className="flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${providerData.color}`}>
-                  {providerData.icon}
+            {Object.entries(providerInfo).map(([providerId, provider]) => {
+              const status = getProviderStatus(providerId);
+              return (
+                <div 
+                  key={providerId}
+                  className={`flex items-center justify-between p-4 rounded-lg border transition-all ${
+                    status.status === 'connected' 
+                      ? 'bg-neutral-900/50 border-neutral-700/50' 
+                      : 'bg-neutral-900/30 border-neutral-700/30 opacity-60'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${provider.color}`}>
+                      {provider.icon}
+                    </div>
+                    <div>
+                      <p className="font-medium">{provider.name}</p>
+                      <p className="text-sm text-neutral-400">{provider.description}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${status.color}`}>
+                      {status.label}
+                    </span>
+                  </div>
                 </div>
-                <div>
-                  <p className="font-medium">{providerData.name}</p>
-                  <p className="text-sm text-neutral-400 capitalize">Signed in via {currentProvider}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-500/10 text-green-400 border border-green-500/20">
-                  Connected
-                </span>
+              );
+            })}
+          </div>
+          <div className="mt-4 p-4 bg-blue-500/5 border border-blue-500/10 rounded-lg">
+            <div className="flex items-start gap-3">
+              <svg className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <div className="flex-1">
+                <p className="text-sm text-blue-300 font-medium mb-1">Account Linking</p>
+                <p className="text-sm text-neutral-400">
+                  Your account is currently linked to {providerData.name}. 
+                  In the future, you'll be able to link additional providers for seamless access.
+                </p>
               </div>
             </div>
           </div>
-          <p className="text-sm text-neutral-400 mt-4">
-            You can link additional providers to your account in the future.
-          </p>
         </div>
 
         {/* Danger Zone */}
@@ -158,13 +211,21 @@ export default function SettingsPage() {
           <h2 className="text-xl font-semibold mb-4 text-red-400">Danger Zone</h2>
           <p className="text-neutral-400 mb-4">
             Once you sign out, you'll need to authenticate again to access your account.
+            Your session will be terminated across all devices.
           </p>
           <button
             onClick={handleSignOut}
-            disabled={isUnlinking}
-            className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={isSigningOut}
+            className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-lg font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-red-600/20"
           >
-            {isUnlinking ? "Signing out..." : "Sign Out"}
+            {isSigningOut ? (
+              <span className="flex items-center gap-2">
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                Signing out...
+              </span>
+            ) : (
+              "Sign Out"
+            )}
           </button>
         </div>
       </main>

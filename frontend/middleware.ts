@@ -10,15 +10,26 @@ export default auth((req) => {
   const publicRoutes = ["/", "/auth/signin", "/auth/error"];
   const isPublicRoute = publicRoutes.some((route) => pathname === route || pathname.startsWith(route));
 
+  // Handle callback URL preservation
+  const callbackUrl = req.nextUrl.searchParams.get("callbackUrl") || pathname;
+
   // If user is not authenticated and trying to access a protected route
   if (!isAuthenticated && !isPublicRoute) {
     const signInUrl = new URL("/auth/signin", req.url);
-    signInUrl.searchParams.set("callbackUrl", pathname);
+    // Preserve the intended destination for redirect after login
+    signInUrl.searchParams.set("callbackUrl", callbackUrl);
     return NextResponse.redirect(signInUrl);
   }
 
-  // If user is authenticated and trying to access sign-in page, redirect to home
+  // If user is authenticated and trying to access sign-in page
   if (isAuthenticated && pathname === "/auth/signin") {
+    // Check if there's a callback URL to redirect to
+    const redirectTo = req.nextUrl.searchParams.get("callbackUrl") || "/";
+    return NextResponse.redirect(new URL(redirectTo, req.url));
+  }
+
+  // If user is authenticated and trying to access error page, redirect to home
+  if (isAuthenticated && pathname === "/auth/error") {
     return NextResponse.redirect(new URL("/", req.url));
   }
 

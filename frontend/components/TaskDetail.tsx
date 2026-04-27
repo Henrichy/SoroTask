@@ -9,6 +9,7 @@ import {
   isPastDate,
 } from '@/lib/dateUtils';
 import { formatDateWithTimezone } from '@/lib/timezoneUtils';
+import PermissionGuard from './PermissionGuard';
 
 interface TaskDetailProps {
   task: Task;
@@ -232,12 +233,36 @@ export default function TaskDetail({
 
       {/* Action Buttons */}
       <div className="flex gap-2 pt-2 border-t border-neutral-700/30">
-        <button className="flex-1 px-3 py-2 rounded-md bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors">
-          Edit Task
-        </button>
-        <button className="flex-1 px-3 py-2 rounded-md bg-neutral-700 hover:bg-neutral-600 text-neutral-200 text-sm font-medium transition-colors">
-          View Logs
-        </button>
+        <PermissionGuard
+          permissions={['tasks:update']}
+          fallback={
+            <button
+              className="flex-1 px-3 py-2 rounded-md bg-neutral-600 text-neutral-400 text-sm font-medium cursor-not-allowed"
+              disabled
+            >
+              Edit Task
+            </button>
+          }
+        >
+          <button className="flex-1 px-3 py-2 rounded-md bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors">
+            Edit Task
+          </button>
+        </PermissionGuard>
+        <PermissionGuard
+          permissions={['tasks:read']}
+          fallback={
+            <button
+              className="flex-1 px-3 py-2 rounded-md bg-neutral-600 text-neutral-400 text-sm font-medium cursor-not-allowed"
+              disabled
+            >
+              View Logs
+            </button>
+          }
+        >
+          <button className="flex-1 px-3 py-2 rounded-md bg-neutral-700 hover:bg-neutral-600 text-neutral-200 text-sm font-medium transition-colors">
+            View Logs
+          </button>
+        </PermissionGuard>
       </div>
     </div>
   );

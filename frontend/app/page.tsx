@@ -28,6 +28,10 @@ export default function Home() {
     // Handle task submission logic here
   };
 
+  const onReset = () => {
+    if (confirmDiscard()) setForm(EMPTY_FORM);
+  };
+
   return (
     /* Backdrop – clicking outside closes the dialog */
     <div

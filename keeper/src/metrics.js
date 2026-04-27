@@ -12,11 +12,14 @@ class Metrics {
       tasksDueTotal: 0,
       tasksExecutedTotal: 0,
       tasksFailedTotal: 0,
+      circuitBreakerTransitions: 0,
+      circuitBreakerRejections: 0,
     };
 
     this.gauges = {
       avgFeePaidXlm: 0,
       lastCycleDurationMs: 0,
+      rpcCircuitState: 0, // 0 = CLOSED, 1 = HALF_OPEN, 2 = OPEN
     };
 
     this.feeSamples = [];
@@ -42,6 +45,8 @@ class Metrics {
       this.gauges.avgFeePaidXlm =
         this.feeSamples.reduce((sum, v) => sum + v, 0) /
         this.feeSamples.length;
+    } else if (key === 'rpcCircuitState') {
+      this.gauges.rpcCircuitState = value;
     } else if (key in this.gauges) {
       this.gauges[key] = value;
     }
@@ -75,6 +80,7 @@ class Metrics {
       uptime: uptimeSeconds,
       lastPollAt: this.lastPollAt ? this.lastPollAt.toISOString() : null,
       rpcConnected: this.rpcConnected,
+      rpcCircuitState: this.gauges.rpcCircuitState === 2 ? 'OPEN' : (this.gauges.rpcCircuitState === 1 ? 'HALF_OPEN' : 'CLOSED'),
     };
   }
 
@@ -84,10 +90,13 @@ class Metrics {
       tasksDueTotal: 0,
       tasksExecutedTotal: 0,
       tasksFailedTotal: 0,
+      circuitBreakerTransitions: 0,
+      circuitBreakerRejections: 0,
     };
     this.gauges = {
       avgFeePaidXlm: 0,
       lastCycleDurationMs: 0,
+      rpcCircuitState: 0,
     };
     this.feeSamples = [];
   }
@@ -174,6 +183,27 @@ class MetricsServer {
       registers: [this.register],
     });
 
+    // Gauge: RPC Circuit Breaker state
+    this.promRpcCircuitState = new promClient.Gauge({
+      name: 'keeper_rpc_circuit_state',
+      help: 'RPC circuit breaker state (0 = CLOSED, 1 = HALF_OPEN, 2 = OPEN)',
+      registers: [this.register],
+    });
+
+    // Counter: Circuit breaker transitions
+    this.promCircuitTransitions = new promClient.Counter({
+      name: 'keeper_circuit_transitions_total',
+      help: 'Total number of circuit breaker state transitions',
+      registers: [this.register],
+    });
+
+    // Counter: Circuit breaker rejections
+    this.promCircuitRejections = new promClient.Counter({
+      name: 'keeper_circuit_rejections_total',
+      help: 'Total number of requests rejected by the circuit breaker',
+      registers: [this.register],
+    });
+
     // Add default metrics (process CPU, memory, etc.)
     promClient.collectDefaultMetrics({ register: this.register });
   }
@@ -192,6 +222,7 @@ class MetricsServer {
     const uptimeSeconds = Math.floor((Date.now() - this.metrics.startTime) / 1000);
     this.promUptime.set(uptimeSeconds);
     this.promRpcConnected.set(this.metrics.rpcConnected ? 1 : 0);
+    this.promRpcCircuitState.set(this.metrics.gauges.rpcCircuitState);
   }
 
   start() {
@@ -284,6 +315,10 @@ class MetricsServer {
       this.promTasksExecuted.inc(amount);
     } else if (key === 'tasksFailedTotal') {
       this.promTasksFailed.inc(amount);
+    } else if (key === 'circuitBreakerTransitions') {
+      this.promCircuitTransitions.inc(amount);
+    } else if (key === 'circuitBreakerRejections') {
+      this.promCircuitRejections.inc(amount);
     }
   }
 
@@ -295,6 +330,8 @@ class MetricsServer {
       this.promAvgFee.set(this.metrics.gauges.avgFeePaidXlm);
     } else if (key === 'lastCycleDurationMs') {
       this.promCycleDuration.set(value);
+    } else if (key === 'rpcCircuitState') {
+      this.promRpcCircuitState.set(value);
     }
   }
 

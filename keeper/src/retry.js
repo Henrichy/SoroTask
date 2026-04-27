@@ -98,6 +98,10 @@ function classifyError(error) {
     return ErrorClassification.RETRYABLE;
   }
 
+  if (normalizedMessage.includes('circuit breaker') && normalizedMessage.includes('open')) {
+    return ErrorClassification.NON_RETRYABLE;
+  }
+
   return ErrorClassification.NON_RETRYABLE;
 }
 

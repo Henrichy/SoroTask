@@ -9,6 +9,9 @@ const TaskPoller = require('./src/poller');
 const TaskRegistry = require('./src/registry');
 const { createLogger } = require('./src/logger');
 const { dryRunTask } = require('./src/dryRun');
+const { wrapRpcServer } = require('./src/rpcWrapper');
+const { MetricsServer } = require('./src/metrics');
+const { GasMonitor } = require('./src/gasMonitor');
 
 // Create root logger for the main module
 const logger = createLogger('keeper');
@@ -44,7 +47,18 @@ async function main() {
     }
 
     const { keypair, accountResponse } = keeperData;
-    const server = new Server(config.rpcUrl);
+    
+    // Initialize gas monitor and metrics server
+    const gasMonitor = new GasMonitor(createLogger('gasMonitor'));
+    const metricsServer = new MetricsServer(gasMonitor, createLogger('metrics'));
+    metricsServer.start();
+
+    // Initialize raw server and wrap it with circuit breaker
+    const rawServer = new Server(config.rpcUrl);
+    const server = wrapRpcServer(rawServer, metricsServer.metrics, {
+        failureThreshold: config.circuitFailureThreshold || 5,
+        recoveryTimeoutMs: config.circuitRecoveryTimeoutMs || 30000
+    });
 
     // Initialize polling engine with logger
     const poller = new TaskPoller(server, config.contractId, {
@@ -57,9 +71,18 @@ async function main() {
     const queue = new ExecutionQueue();
     const queueLogger = createLogger('queue');
 
-    queue.on('task:started', (taskId) => queueLogger.info('Started execution', { taskId }));
-    queue.on('task:success', (taskId) => queueLogger.info('Task executed successfully', { taskId }));
-    queue.on('task:failed', (taskId, err) => queueLogger.error('Task failed', { taskId, error: err.message }));
+    queue.on('task:started', (taskId) => {
+        queueLogger.info('Started execution', { taskId });
+        metricsServer.increment('tasksCheckedTotal');
+    });
+    queue.on('task:success', (taskId) => {
+        queueLogger.info('Task executed successfully', { taskId });
+        metricsServer.increment('tasksExecutedTotal');
+    });
+    queue.on('task:failed', (taskId, err) => {
+        queueLogger.error('Task failed', { taskId, error: err.message });
+        metricsServer.increment('tasksFailedTotal');
+    });
     queue.on('cycle:complete', (stats) => queueLogger.info('Cycle complete', stats));
 
     // Task executor function - calls contract.execute(keeper, task_id)
@@ -173,6 +196,7 @@ async function main() {
         logger.info('Received shutdown signal, starting graceful shutdown', { signal });
         clearInterval(pollingInterval);
         await queue.drain();
+        metricsServer.stop();
         logger.info('Graceful shutdown complete, exiting');
         process.exit(0);
     };

@@ -83,6 +83,9 @@ class ExecutionQueue extends EventEmitter {
           this.emit("task:started", taskId);
         }
 
+        let taskConfig = null;
+        let attempt = 0;
+
         try {
           if (attemptContext) {
             await executorFn(taskId, attemptContext);

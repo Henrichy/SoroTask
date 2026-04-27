@@ -50,16 +50,16 @@ export default function CalendarDay({
   return (
     <button
       onClick={() => onSelect?.(date)}
-      className={`relative w-full min-h-[100px] ${compact ? 'min-h-[60px]' : ''} p-2 rounded-lg border transition-all text-left ${getDayColor()} ${
+      className={`relative w-full min-h-[80px] sm:min-h-[100px] p-2 sm:p-3 rounded-lg border transition-all text-left touch-manipulation ${getDayColor()} ${
         !isCurrentMonth && 'opacity-40 pointer-events-none'
       } ${isToday && 'ring-2 ring-blue-400/50'}`}
       aria-label={`${date.toDateString()}, ${tasks.length} tasks`}
     >
       {/* Day of month */}
       <div
-        className={`font-semibold mb-1 ${
+        className={`font-semibold mb-1 sm:mb-2 ${
           isToday ? 'text-blue-300' : 'text-neutral-200'
-        } ${compact ? 'text-xs' : 'text-sm'}`}
+        } text-sm sm:text-base`}
       >
         {date.getDate()}
       </div>
@@ -69,19 +69,20 @@ export default function CalendarDay({
         {displayTasks.map((task, index) => (
           <div
             key={task.id}
-            className="flex items-center gap-1 text-xs"
+            className="flex items-center gap-1 sm:gap-2 text-xs touch-manipulation"
             onClick={(e) => {
               e.stopPropagation();
               onTaskClick?.(task);
             }}
           >
             <div
-              className={`w-2 h-2 rounded-full flex-shrink-0 ${getTaskIndicatorColor(
+              className={`w-2 h-2 sm:w-3 sm:h-3 rounded-full flex-shrink-0 ${getTaskIndicatorColor(
                 task
               )}`}
             />
-            <span className="text-neutral-300 truncate text-xs">
-              {task.functionName}
+            <span className="text-neutral-300 truncate text-xs leading-tight">
+              <span className="hidden sm:inline">{task.functionName}</span>
+              <span className="sm:hidden">{task.functionName.slice(0, 8)}...</span>
             </span>
           </div>
         ))}
@@ -89,7 +90,7 @@ export default function CalendarDay({
         {/* More tasks indicator */}
         {hasMultipleTasks && (
           <button
-            className="text-xs px-2 py-1 rounded bg-orange-500/20 text-orange-300 hover:bg-orange-500/30 transition-colors w-full text-center border border-orange-500/20 mt-1"
+            className="text-xs px-2 py-1.5 sm:py-1 rounded bg-orange-500/20 text-orange-300 hover:bg-orange-500/30 transition-colors w-full text-center border border-orange-500/20 mt-1 touch-manipulation"
             onClick={(e) => {
               e.stopPropagation();
               onExpandClick?.();
@@ -102,7 +103,7 @@ export default function CalendarDay({
 
       {/* Dense date indicator (visual hint) */}
       {hasMultipleTasks && (
-        <div className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-orange-400 opacity-60" />
+        <div className="absolute top-1 right-1 w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-orange-400 opacity-60" />
       )}
     </button>
   );

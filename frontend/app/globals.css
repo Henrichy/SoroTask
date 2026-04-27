@@ -9,6 +9,28 @@
   --focus-ring-width: 3px;
 }
 
+[data-theme="dark"] {
+  --bg-base: #09090b;
+  --bg-surface: #18181b;
+  --bg-elevated: #27272a;
+  --bg-overlay: rgba(9, 9, 11, 0.6);
+
+  --border: #3f3f46;
+  --border-subtle: #27272a;
+
+  --text-primary: #fafafa;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
+
+  --accent: #3b82f6;
+  --accent-hover: #60a5fa;
+  --accent-shadow: rgba(59, 130, 246, 0.25);
+
+  --input-bg: #09090b;
+  --input-border: #3f3f46;
+}
+
+/* ── Tailwind theme bridge ────────────────────────────────── */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

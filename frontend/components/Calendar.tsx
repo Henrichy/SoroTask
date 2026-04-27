@@ -82,75 +82,67 @@ export default function Calendar({
   });
 
   return (
-    <div className="w-full bg-neutral-800/50 border border-neutral-700/50 rounded-xl p-6 shadow-xl">
+    <div className="w-full bg-neutral-800/50 border border-neutral-700/50 rounded-xl p-3 sm:p-6 shadow-xl">
       {/* Header with navigation */}
-      <div className="mb-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-4">
-            <h3 className="text-xl font-bold">Schedule Calendar</h3>
+      <div className="mb-4 sm:mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+            <h3 className="text-lg sm:text-xl font-bold">Schedule Calendar</h3>
             <button
               onClick={goToToday}
-              className="text-xs px-3 py-1 rounded-md bg-blue-600/20 text-blue-300 hover:bg-blue-600/30 transition-colors border border-blue-500/30"
+              className="text-xs px-3 py-1.5 rounded-md bg-blue-600/20 text-blue-300 hover:bg-blue-600/30 transition-colors border border-blue-500/30 self-start sm:self-auto"
             >
               Today
             </button>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between sm:justify-center gap-2">
             <button
               onClick={goToPreviousMonth}
-              className="px-3 py-2 rounded-md bg-neutral-700/50 hover:bg-neutral-700 transition-colors"
+              className="px-3 py-2 rounded-md bg-neutral-700/50 hover:bg-neutral-700 transition-colors touch-manipulation"
               aria-label="Previous month"
             >
               ←
             </button>
-            <div className="min-w-[160px] text-center">
-              <span className="text-lg font-semibold">
+            <div className="min-w-[120px] sm:min-w-[160px] text-center">
+              <span className="text-base sm:text-lg font-semibold">
                 {monthName} {currentDate.getFullYear()}
               </span>
             </div>
             <button
               onClick={goToNextMonth}
-              className="px-3 py-2 rounded-md bg-neutral-700/50 hover:bg-neutral-700 transition-colors"
+              className="px-3 py-2 rounded-md bg-neutral-700/50 hover:bg-neutral-700 transition-colors touch-manipulation"
               aria-label="Next month"
             >
               →
             </button>
           </div>
 
-          <div className="text-xs text-neutral-400">Timezone: {timezone}</div>
+          <div className="text-xs text-neutral-400 text-center sm:text-right">
+            <span className="hidden sm:inline">Timezone: {timezone}</span>
+            <span className="sm:hidden">{timezone.split('/')[1]}</span>
+          </div>
         </div>
       </div>
 
       {/* Calendar grid */}
-      <div className="overflow-x-auto">
-        <div className="inline-block min-w-full">
+      <div className="overflow-x-auto -mx-3 sm:mx-0">
+        <div className="inline-block min-w-full px-3 sm:px-0">
           {/* Weekday headers */}
-          <div
-            className={`grid gap-px mb-2 ${
-              compact
-                ? 'grid-cols-7'
-                : `grid-cols-7 ${compact ? 'gap-1' : 'gap-2'}`
-            }`}
-          >
+          <div className="grid grid-cols-7 gap-1 sm:gap-2 mb-2">
             {weekDays.map((day, index) => (
               <div
                 key={index}
-                className={`text-center font-medium text-neutral-400 ${
-                  compact ? 'text-xs py-1' : 'text-sm py-2'
-                }`}
+                className="text-center font-medium text-neutral-400 text-xs sm:text-sm py-1 sm:py-2"
               >
-                {day}
+                <span className="hidden sm:inline">{day}</span>
+                <span className="sm:hidden">{day.slice(0, 3)}</span>
               </div>
             ))}
           </div>
 
           {/* Calendar days */}
-          <div
-            className={`grid gap-px ${
-              compact ? 'grid-cols-7 gap-1' : 'grid-cols-7 gap-2'
-            }`}
-          >
+          <div className="grid grid-cols-7 gap-1 sm:gap-2">
             {calendarGrid.map((week, weekIndex) =>
               week.map((day, dayIndex) => {
                 const dateKey = formatDateKey(day);

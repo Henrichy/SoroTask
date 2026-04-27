@@ -63,17 +63,17 @@ export default function TaskDetail({
   const deadlineInfo = getDeadlineInfo();
 
   return (
-    <div className="bg-neutral-800/50 border border-neutral-700/50 rounded-xl p-6 space-y-4">
+    <div className="bg-neutral-800/50 border border-neutral-700/50 rounded-xl p-4 sm:p-6 space-y-4 sm:space-y-6">
       {/* Header with close button */}
       <div className="flex items-start justify-between">
-        <div>
-          <h3 className="text-xl font-bold text-neutral-100">{task.functionName}</h3>
-          <p className="text-xs font-mono text-neutral-400 mt-1">{task.id}</p>
+        <div className="flex-1 min-w-0">
+          <h3 className="text-lg sm:text-xl font-bold text-neutral-100 truncate">{task.functionName}</h3>
+          <p className="text-xs font-mono text-neutral-400 mt-1 break-all">{task.id}</p>
         </div>
         {onClose && (
           <button
             onClick={onClose}
-            className="text-neutral-400 hover:text-neutral-200 transition-colors"
+            className="text-neutral-400 hover:text-neutral-200 transition-colors p-2 -mr-2 touch-manipulation flex-shrink-0"
             aria-label="Close task detail"
           >
             ✕
@@ -120,7 +120,7 @@ export default function TaskDetail({
           Schedule Settings
         </h4>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="text-xs font-medium text-neutral-400">
               Execution Interval
@@ -194,7 +194,7 @@ export default function TaskDetail({
 
       {/* Additional Info */}
       <div className="space-y-3 pt-2 border-t border-neutral-700/30">
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="text-xs font-medium text-neutral-400">
               Created
@@ -232,19 +232,19 @@ export default function TaskDetail({
       </div>
 
       {/* Action Buttons */}
-      <div className="flex gap-2 pt-2 border-t border-neutral-700/30">
+      <div className="flex flex-col sm:flex-row gap-2 pt-4 border-t border-neutral-700/30">
         <PermissionGuard
           permissions={['tasks:update']}
           fallback={
             <button
-              className="flex-1 px-3 py-2 rounded-md bg-neutral-600 text-neutral-400 text-sm font-medium cursor-not-allowed"
+              className="flex-1 px-4 py-3 sm:py-2 rounded-md bg-neutral-600 text-neutral-400 text-sm font-medium cursor-not-allowed touch-manipulation"
               disabled
             >
               Edit Task
             </button>
           }
         >
-          <button className="flex-1 px-3 py-2 rounded-md bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors">
+          <button className="flex-1 px-4 py-3 sm:py-2 rounded-md bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors touch-manipulation">
             Edit Task
           </button>
         </PermissionGuard>
@@ -252,14 +252,14 @@ export default function TaskDetail({
           permissions={['tasks:read']}
           fallback={
             <button
-              className="flex-1 px-3 py-2 rounded-md bg-neutral-600 text-neutral-400 text-sm font-medium cursor-not-allowed"
+              className="flex-1 px-4 py-3 sm:py-2 rounded-md bg-neutral-600 text-neutral-400 text-sm font-medium cursor-not-allowed touch-manipulation"
               disabled
             >
               View Logs
             </button>
           }
         >
-          <button className="flex-1 px-3 py-2 rounded-md bg-neutral-700 hover:bg-neutral-600 text-neutral-200 text-sm font-medium transition-colors">
+          <button className="flex-1 px-4 py-3 sm:py-2 rounded-md bg-neutral-700 hover:bg-neutral-600 text-neutral-200 text-sm font-medium transition-colors touch-manipulation">
             View Logs
           </button>
         </PermissionGuard>

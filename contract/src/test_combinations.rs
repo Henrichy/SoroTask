@@ -814,4 +814,153 @@ mod test_combinations {
         // last_run must not advance
         assert_eq!(client.get_task(&task_id).unwrap().last_run, 100);
     }
+
+    // =========================================================================
+    // 11. COMPLEX DEPENDENCY MATRICES
+    // =========================================================================
+
+    /// Why: A task with multiple dependencies must remain blocked until ALL of
+    /// them have executed successfully.
+    #[test]
+    fn combo_multiple_dependencies_unmet_blocked() {
+        let (env, client) = setup();
+        let target = env.register_contract(None, Target);
+
+        let blocker_1 = client.register(&base(&env, target.clone()));
+        let blocker_2 = client.register(&base(&env, target.clone()));
+        
+        let task_id = client.register(&base(&env, target));
+        client.add_dependency(&task_id, &blocker_1);
+        client.add_dependency(&task_id, &blocker_2);
+
+        let keeper = Address::generate(&env);
+        ts(&env, 3_600);
+
+        // Run only blocker 1
+        client.execute(&keeper, &blocker_1);
+        
+        // Task must still be blocked
+        let result = client.try_execute(&keeper, &task_id);
+        assert_eq!(
+            result,
+            Err(Ok(soroban_sdk::Error::from_contract_error(
+                Error::DependencyBlocked as u32
+            ))),
+            "task must stay blocked if only some dependencies are met"
+        );
+
+        // Run blocker 2
+        client.execute(&keeper, &blocker_2);
+
+        // Now task must be executable
+        client.execute(&keeper, &task_id);
+        assert_eq!(client.get_task(&task_id).unwrap().last_run, 3_600);
+    }
+
+    /// Why: Even if all dependencies are met, a paused task must still be rejected.
+    /// TaskPaused error should take precedence over dependency state.
+    #[test]
+    fn combo_dependencies_met_but_paused_fails() {
+        let (env, client) = setup();
+        let target = env.register_contract(None, Target);
+
+        let blocker_id = client.register(&base(&env, target.clone()));
+        let task_id = client.register(&base(&env, target));
+        client.add_dependency(&task_id, &blocker_id);
+
+        let keeper = Address::generate(&env);
+        ts(&env, 3_600);
+
+        // Meet dependency
+        client.execute(&keeper, &blocker_id);
+        
+        // Pause task
+        client.pause_task(&task_id);
+
+        // Try to execute
+        let result = client.try_execute(&keeper, &task_id);
+        assert_eq!(
+            result,
+            Err(Ok(soroban_sdk::Error::from_contract_error(
+                Error::TaskPaused as u32
+            ))),
+            "paused state must win over dependency state"
+        );
+    }
+
+    /// Why: If dependencies are met but the resolver returns false, the task
+    /// must not execute. This verifies the interaction between state-based
+    /// gates and condition-based gates.
+    #[test]
+    fn combo_dependencies_met_but_resolver_fails() {
+        let (env, client) = setup();
+        let target = env.register_contract(None, Target);
+        let resolver = env.register_contract(None, resolver_false::R);
+
+        let blocker_id = client.register(&base(&env, target.clone()));
+        let mut cfg = base(&env, target);
+        cfg.resolver = Some(resolver);
+        let task_id = client.register(&cfg);
+        client.add_dependency(&task_id, &blocker_id);
+
+        let keeper = Address::generate(&env);
+        ts(&env, 3_600);
+
+        // Meet dependency
+        client.execute(&keeper, &blocker_id);
+        
+        // Try to execute target task (resolver is false)
+        client.execute(&keeper, &task_id);
+        
+        // Verify it DID NOT run
+        assert_eq!(client.get_task(&task_id).unwrap().last_run, 0);
+    }
+
+    /// Why: Verifies that a task can execute even if its gas balance is 
+    /// exactly equal to the fee. This is a critical boundary condition.
+    #[test]
+    fn combo_exact_gas_balance() {
+        let (env, client) = setup();
+        let target = env.register_contract(None, Target);
+        let mut cfg = base(&env, target);
+        cfg.gas_balance = 100; // Exact fee
+        let task_id = client.register(&cfg);
+
+        let keeper = Address::generate(&env);
+        ts(&env, 3_600);
+
+        client.execute(&keeper, &task_id);
+        
+        let task = client.get_task(&task_id).unwrap();
+        assert_eq!(task.last_run, 3_600);
+        assert_eq!(task.gas_balance, 0);
+    }
+
+    /// Why: Verifies that sequential executions correctly deduct gas balance
+    /// and that the second execution fails if gas is depleted.
+    #[test]
+    fn combo_gas_deduction_sequence() {
+        let (env, client) = setup();
+        let target = env.register_contract(None, Target);
+        let mut cfg = base(&env, target);
+        cfg.gas_balance = 150; // Not enough for two (fee=100)
+        let task_id = client.register(&cfg);
+
+        let keeper = Address::generate(&env);
+        
+        // First run
+        ts(&env, 3_600);
+        client.execute(&keeper, &task_id);
+        assert_eq!(client.get_task(&task_id).unwrap().gas_balance, 50);
+
+        // Second run (attempt)
+        ts(&env, 7_200);
+        let result = client.try_execute(&keeper, &task_id);
+        assert_eq!(
+            result,
+            Err(Ok(soroban_sdk::Error::from_contract_error(
+                Error::InsufficientBalance as u32
+            )))
+        );
+    }
 }

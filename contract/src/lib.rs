@@ -19,6 +19,7 @@ pub enum Error {
     DependencyNotFound = 9,
     CircularDependency = 10,
     DependencyBlocked = 11,
+    AlreadyInitialized = 12,
 }
 
 #[contracttype]
@@ -155,7 +156,7 @@ impl SoroTaskContract {
 
         // Emit TaskRegistered event
         env.events().publish(
-            (Symbol::new(&env, "TaskRegistered"), counter),
+            (Symbol::new(&env, "TaskRegistered"), Symbol::new(&env, "v1"), counter),
             config.creator.clone(),
         );
 
@@ -216,7 +217,7 @@ impl SoroTaskContract {
         remove_active_task_id(&env, task_id);
 
         env.events().publish(
-            (Symbol::new(&env, "TaskPaused"), task_id),
+            (Symbol::new(&env, "TaskPaused"), Symbol::new(&env, "v1"), task_id),
             config.creator.clone(),
         );
     }
@@ -241,7 +242,7 @@ impl SoroTaskContract {
         add_active_task_id(&env, task_id);
 
         env.events().publish(
-            (Symbol::new(&env, "TaskResumed"), task_id),
+            (Symbol::new(&env, "TaskResumed"), Symbol::new(&env, "v1"), task_id),
             config.creator.clone(),
         );
     }
@@ -408,16 +409,22 @@ impl SoroTaskContract {
 
             // Emit keeper paid event
             env.events()
-                .publish((Symbol::new(&env, "KeeperPaid"), task_id), (keeper, fee));
+                .publish((Symbol::new(&env, "KeeperPaid"), Symbol::new(&env, "v1"), task_id), (keeper, fee));
         }
     }
 
     /// Initializes the contract with a gas token.
     pub fn init(env: Env, token: Address) {
         if env.storage().instance().has(&DataKey::Token) {
-            panic!("Already initialized");
+            panic_with_error!(&env, Error::AlreadyInitialized);
         }
         env.storage().instance().set(&DataKey::Token, &token);
+
+        // Emit initialized event
+        env.events().publish(
+            (Symbol::new(&env, "ContractInitialized"), Symbol::new(&env, "v1")),
+            token,
+        );
     }
 
     /// Deposits gas tokens to a task's balance.
@@ -447,7 +454,7 @@ impl SoroTaskContract {
 
         // Emit event
         env.events()
-            .publish((Symbol::new(&env, "GasDeposited"), task_id), (from, amount));
+            .publish((Symbol::new(&env, "GasDeposited"), Symbol::new(&env, "v1"), task_id), (from, amount));
     }
 
     /// Withdraws gas tokens from a task's balance.
@@ -483,7 +490,7 @@ impl SoroTaskContract {
 
         // Emit event
         env.events().publish(
-            (Symbol::new(&env, "GasWithdrawn"), task_id),
+            (Symbol::new(&env, "GasWithdrawn"), Symbol::new(&env, "v1"), task_id),
             (config.creator.clone(), amount),
         );
     }
@@ -522,7 +529,7 @@ impl SoroTaskContract {
         let refund_amount = config.gas_balance;
         // Events: TaskCancelled(u64, i128) with data: (creator, amount_refunded)
         env.events().publish(
-            (Symbol::new(&env, "TaskCancelled"), task_id),
+            (Symbol::new(&env, "TaskCancelled"), Symbol::new(&env, "v1"), task_id),
             (config.creator.clone(), refund_amount),
         );
     }
@@ -577,7 +584,7 @@ impl SoroTaskContract {
 
             // Emit event
             env.events().publish(
-                (Symbol::new(&env, "DependencyAdded"), task_id),
+                (Symbol::new(&env, "DependencyAdded"), Symbol::new(&env, "v1"), task_id),
                 depends_on_task_id,
             );
         }
@@ -611,7 +618,7 @@ impl SoroTaskContract {
 
         // Emit event
         env.events().publish(
-            (Symbol::new(&env, "DependencyRemoved"), task_id),
+            (Symbol::new(&env, "DependencyRemoved"), Symbol::new(&env, "v1"), task_id),
             depends_on_task_id,
         );
     }
@@ -822,7 +829,7 @@ mod tests {
         env.storage().persistent().set(&task_key, &updated);
 
         env.events().publish(
-            (Symbol::new(&env, "TaskUpdated"), task_id),
+            (Symbol::new(&env, "TaskUpdated"), Symbol::new(&env, "v1"), task_id),
             updated.creator.clone(),
         );
     }

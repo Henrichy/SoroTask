@@ -1,4 +1,5 @@
-import '@testing-library/jest-dom'
+require('@testing-library/jest-dom')
+const React = require('react')
 
 // Mock environment variables for tests
 process.env.NEXT_PUBLIC_API_URL = 'http://localhost:3000'

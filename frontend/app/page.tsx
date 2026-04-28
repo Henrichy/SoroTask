@@ -376,6 +376,7 @@ export default function Home() {
                 </tr>
               </tbody>
             </table>
+            <div ref={logsEndRef} />
           </div>
 
           <div className="grid grid-cols-2 gap-4">

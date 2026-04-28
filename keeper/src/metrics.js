@@ -1,5 +1,6 @@
 const http = require('http');
 const promClient = require('prom-client');
+const { Server } = require('socket.io');
 
 /**
  * Metrics store for tracking operational statistics.
@@ -108,11 +109,17 @@ class MetricsServer {
       10,
     );
     this.server = null;
+    this.io = null;
+    this.registry = null;
     this.metrics = new Metrics();
 
     // Initialize Prometheus registry and metrics
     this.register = new promClient.Registry();
     this.initPrometheusMetrics();
+  }
+
+  setRegistry(registry) {
+    this.registry = registry;
   }
 
   initPrometheusMetrics() {
@@ -278,6 +285,17 @@ class MetricsServer {
 
   start() {
     this.server = http.createServer((req, res) => {
+      // CORS headers for initial development
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+
       if (req.url === '/health' || req.url === '/health/') {
         this.handleHealth(res);
       } else if (req.url === '/metrics' || req.url === '/metrics/') {
@@ -307,6 +325,31 @@ class MetricsServer {
         `Forecast endpoint: http://localhost:${this.port}/metrics/forecast`,
       );
     });
+
+    this.io.on('connection', (socket) => {
+      this.logger.info('Client connected via WebSocket', { socketId: socket.id });
+
+      // Send initial state
+      socket.emit('sync:metrics', this.metrics.snapshot());
+      if (this.registry) {
+        socket.emit('sync:tasks', this.registry.getTasksWithStats());
+      }
+
+      socket.on('disconnect', () => {
+        this.logger.info('Client disconnected', { socketId: socket.id });
+      });
+    });
+
+    this.server.listen(this.port, () => {
+      this.logger.info(`Server running on port ${this.port}`);
+      this.logger.info(`WebSocket enabled on http://localhost:${this.port}`);
+    });
+  }
+
+  broadcast(event, data) {
+    if (this.io) {
+      this.io.emit(event, data);
+    }
   }
 
   handleHealth(res) {
@@ -439,6 +482,7 @@ class MetricsServer {
 
   updateHealth(state) {
     this.metrics.updateHealth(state);
+    this.broadcast('sync:health', this.metrics.getHealthStatus(this.healthStaleThreshold));
   }
 
   increment(key, amount) {
@@ -456,6 +500,8 @@ class MetricsServer {
     } else if (key === 'throttledRequestsTotal') {
       this.promThrottledRequests.inc({ limiter_name: amount.name || 'unknown' }, amount.value || 1);
     }
+
+    this.broadcast('sync:metrics', this.metrics.snapshot());
   }
 
   record(key, value) {
@@ -469,14 +515,20 @@ class MetricsServer {
     } else if (key === 'rpcCircuitState') {
       this.promRpcCircuitState.set(value);
     }
+
+    this.broadcast('sync:metrics', this.metrics.snapshot());
   }
 
   stop() {
+    if (this.io) {
+      this.io.close();
+    }
     if (this.server) {
       this.server.close();
-      this.logger.info('Metrics server stopped');
+      this.logger.info('Server stopped');
     }
   }
 }
 
 module.exports = { Metrics, MetricsServer };
+

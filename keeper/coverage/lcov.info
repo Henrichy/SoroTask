@@ -1,5 +1,5 @@
 TN:
-SF:src\concurrency.js
+SF:src/concurrency.js
 FN:1,createConcurrencyLimit
 FN:7,(anonymous_1)
 FN:18,(anonymous_2)
@@ -43,10 +43,10 @@ BRDA:8,0,1,62
 BRDA:8,1,0,126
 BRDA:8,1,1,117
 BRF:4
-BRH:4
+BRH:0
 end_of_record
 TN:
-SF:src\logger.js
+SF:src/logger.js
 FN:34,normalizeLogLevel
 FN:38,shouldUsePrettyTransport
 FN:48,createBaseLogger
@@ -144,7 +144,7 @@ BRF:20
 BRH:0
 end_of_record
 TN:
-SF:src\poller.js
+SF:src/poller.js
 FN:11,(anonymous_0)
 FN:35,(anonymous_1)
 FN:58,(anonymous_2)
@@ -484,7 +484,7 @@ BRF:32
 BRH:28
 end_of_record
 TN:
-SF:src\registry.js
+SF:src/registry.js
 FN:10,(anonymous_0)
 FN:24,(anonymous_1)
 FN:34,(anonymous_2)

@@ -86,6 +86,9 @@ class ExecutionQueue extends EventEmitter {
         let taskConfig = null;
         let attempt = 0;
 
+        // Distributed lock: attempt to claim the task before executing
+        const lockTtl = parseInt(process.env.LOCK_TTL_MS || '60000', 10);
+        let token = null;
         try {
           if (attemptContext) {
             await executorFn(taskId, attemptContext);
@@ -133,6 +136,18 @@ class ExecutionQueue extends EventEmitter {
           }
           this.emit("task:failed", taskId, error);
         } finally {
+          // Attempt to release the lock if we hold it
+          try {
+            if (token) {
+              const released = await releaseLock(taskId, token);
+              if (!released) {
+                lockerLogger.warn('Lock release failed (token mismatch or expired)', { taskId });
+              }
+            }
+          } catch (err) {
+            lockerLogger.error('Error releasing lock', { taskId, error: err.message });
+          }
+
           this.inFlight--;
         }
       });

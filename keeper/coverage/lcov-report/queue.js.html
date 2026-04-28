@@ -361,13 +361,13 @@ class ExecutionQueue extends EventEmitter {
     this.metricsServer = metricsServer;
     this.idempotencyGuard = options.idempotencyGuard || null;
 &nbsp;
-    this.depth = 0;
-    this.inFlight = 0;
-    this.completed = 0;
-    this.failedCount = 0;
+<span class="cstat-no" title="statement not covered" >    this.depth = 0;</span>
+<span class="cstat-no" title="statement not covered" >    this.inFlight = 0;</span>
+<span class="cstat-no" title="statement not covered" >    this.completed = 0;</span>
+<span class="cstat-no" title="statement not covered" >    this.failedCount = 0;</span>
 &nbsp;
-    this.activePromises = [];
-    this.failedTasks = new Set();
+<span class="cstat-no" title="statement not covered" >    this.activePromises = [];</span>
+<span class="cstat-no" title="statement not covered" >    this.failedTasks = new Set();</span>
   }
 &nbsp;
   async enqueue(taskIds, executorFn) {

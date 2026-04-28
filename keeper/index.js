@@ -11,6 +11,7 @@ const { createLogger } = require("./src/logger");
 const { dryRunTask } = require("./src/dryRun");
 const { executeTaskWithRetry } = require("./src/executor");
 const { ExecutionIdempotencyGuard } = require("./src/idempotency");
+const { StartupValidator } = require("./src/validator");
 
 // Create root logger for the main module
 const logger = createLogger("keeper");
@@ -49,6 +50,21 @@ async function main() {
 
   const { keypair } = keeperData;
   const server = new Server(config.rpcUrl);
+
+  // Perform startup validation to fail fast on configuration errors
+  const validator = new StartupValidator(
+    server,
+    config.contractId,
+    config.networkPassphrase,
+    createLogger("validator")
+  );
+
+  try {
+    await validator.validate();
+  } catch (err) {
+    logger.fatal("Startup Validation Failed", { error: err.message });
+    process.exit(1);
+  }
 
   const idempotencyGuard = new ExecutionIdempotencyGuard({
     logger: createLogger("idempotency"),

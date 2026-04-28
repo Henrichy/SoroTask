@@ -5,13 +5,20 @@ import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 
+type AuthError = {
+  message: string;
+  type: 'error' | 'warning' | 'info';
+  recoverable: boolean;
+};
+
 function SignInContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [loading, setLoading] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<AuthError | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [isEmailFormVisible, setIsEmailFormVisible] = useState(false);
 
   const callbackUrl = searchParams.get("callbackUrl") || "/";
 
@@ -19,12 +26,37 @@ function SignInContent() {
   useEffect(() => {
     const errorParam = searchParams.get("error");
     if (errorParam) {
-      const errorMessages: Record<string, string> = {
-        OAuthSignin: "Failed to sign in with the provider. Please try again.",
-        OAuthCallback: "The authentication was canceled or failed. Please try again.",
-        OAuthCreateAccount: "Failed to create account. Please try again.",
-        SessionRequired: "You must be signed in to access this page.",
-        Default: "An error occurred during authentication. Please try again.",
+      const errorMessages: Record<string, AuthError> = {
+        OAuthSignin: {
+          message: "Failed to initiate sign in with the provider. Please try again.",
+          type: 'error',
+          recoverable: true
+        },
+        OAuthCallback: {
+          message: "The authentication was canceled or failed. Please try again.",
+          type: 'warning',
+          recoverable: true
+        },
+        OAuthCreateAccount: {
+          message: "Failed to create account. Please try again or contact support.",
+          type: 'error',
+          recoverable: true
+        },
+        OAuthAccountNotLinked: {
+          message: "This email is already associated with another account. Please sign in with the original provider.",
+          type: 'error',
+          recoverable: true
+        },
+        SessionRequired: {
+          message: "You must be signed in to access this page.",
+          type: 'info',
+          recoverable: true
+        },
+        Default: {
+          message: "An error occurred during authentication. Please try again.",
+          type: 'error',
+          recoverable: true
+        },
       };
       setError(errorMessages[errorParam] || errorMessages.Default);
     }
@@ -41,20 +73,51 @@ function SignInContent() {
       });
 
       if (result?.error) {
-        setError(`Failed to sign in with ${providerId}. Please try again.`);
+        setError({
+          message: `Failed to sign in with ${providerId}. ${result.error === 'OAuthAccountNotLinked' 
+            ? 'This account is already linked to another provider.' 
+            : 'Please try again.'}`,
+          type: 'error',
+          recoverable: true
+        });
         setLoading(null);
       } else if (result?.ok) {
         router.push(callbackUrl);
         router.refresh();
       }
     } catch (err) {
-      setError(`An error occurred. Please try again.`);
+      setError({
+        message: 'An unexpected error occurred. Please try again.',
+        type: 'error',
+        recoverable: true
+      });
       setLoading(null);
     }
   };
 
   const handleEmailSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Validate email format
+    if (!email || !/\S+@\S+\.\S+/.test(email)) {
+      setError({
+        message: 'Please enter a valid email address.',
+        type: 'error',
+        recoverable: true
+      });
+      return;
+    }
+    
+    // Validate password
+    if (!password || password.length < 6) {
+      setError({
+        message: 'Password must be at least 6 characters.',
+        type: 'error',
+        recoverable: true
+      });
+      return;
+    }
+    
     setLoading("email");
     setError(null);
 
@@ -67,14 +130,22 @@ function SignInContent() {
       });
 
       if (result?.error) {
-        setError("Invalid email or password.");
+        setError({
+          message: 'Invalid email or password.',
+          type: 'error',
+          recoverable: true
+        });
         setLoading(null);
       } else if (result?.ok) {
         router.push(callbackUrl);
         router.refresh();
       }
     } catch (err) {
-      setError("An error occurred. Please try again.");
+      setError({
+        message: 'An unexpected error occurred. Please try again.',
+        type: 'error',
+        recoverable: true
+      });
       setLoading(null);
     }
   };
@@ -134,8 +205,47 @@ function SignInContent() {
 
           {/* Error Message */}
           {error && (
-            <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-lg">
-              <p className="text-sm text-red-400">{error}</p>
+            <div className={`mb-6 p-4 rounded-lg border ${
+              error.type === 'error' 
+                ? 'bg-red-500/10 border-red-500/20' 
+                : error.type === 'warning'
+                ? 'bg-yellow-500/10 border-yellow-500/20'
+                : 'bg-blue-500/10 border-blue-500/20'
+            }`}>
+              <div className="flex items-start gap-3">
+                {error.type === 'error' && (
+                  <svg className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                )}
+                {error.type === 'warning' && (
+                  <svg className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                )}
+                {error.type === 'info' && (
+                  <svg className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                )}
+                <div className="flex-1">
+                  <p className={`text-sm ${
+                    error.type === 'error' 
+                      ? 'text-red-400' 
+                      : error.type === 'warning'
+                      ? 'text-yellow-400'
+                      : 'text-blue-400'
+                  }`}>{error.message}</p>
+                  {error.recoverable && (
+                    <button
+                      onClick={() => setError(null)}
+                      className="mt-2 text-sm underline opacity-75 hover:opacity-100"
+                    >
+                      Dismiss
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
           )}
 
@@ -146,18 +256,20 @@ function SignInContent() {
                 key={provider.id}
                 onClick={() => handleProviderSignIn(provider.id)}
                 disabled={loading !== null}
-                className={`w-full flex items-center justify-center gap-3 px-4 py-3 rounded-lg font-medium transition-colors border border-neutral-700/50 ${provider.bgColor} ${provider.textColor} ${
-                  loading === provider.id ? "opacity-50 cursor-not-allowed" : ""
-                }`}
+                className={`w-full flex items-center justify-center gap-3 px-4 py-3 rounded-lg font-medium transition-all duration-200 border border-neutral-700/50 ${provider.bgColor} ${provider.textColor} ${
+                  loading === provider.id 
+                    ? "opacity-50 cursor-not-allowed scale-[0.98]" 
+                    : "hover:scale-[1.02] active:scale-[0.98]"
+                } ${loading !== null && loading !== provider.id ? "opacity-60" : ""}`}
               >
                 {loading === provider.id ? (
                   <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
                 ) : (
                   provider.icon
                 )}
-                <span>
+                <span className="font-medium">
                   {loading === provider.id
-                    ? `Signing in with ${provider.name}...`
+                    ? `Connecting to ${provider.name}...`
                     : `Continue with ${provider.name}`}
                 </span>
               </button>
@@ -170,51 +282,60 @@ function SignInContent() {
               <div className="w-full border-t border-neutral-700/50"></div>
             </div>
             <div className="relative flex justify-center text-sm">
-              <span className="px-4 bg-neutral-800/50 text-neutral-400">or continue with email</span>
+              <button
+                onClick={() => setIsEmailFormVisible(!isEmailFormVisible)}
+                className="px-4 bg-neutral-800/50 text-neutral-400 hover:text-neutral-200 transition-colors cursor-pointer"
+              >
+                {isEmailFormVisible ? 'hide email form' : 'or continue with email'}
+              </button>
             </div>
           </div>
 
           {/* Email Form */}
-          <form onSubmit={handleEmailSignIn} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-neutral-400 mb-1">Email</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                required
+          {isEmailFormVisible && (
+            <form onSubmit={handleEmailSignIn} className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
+              <div>
+                <label htmlFor="email" className="block text-sm font-medium text-neutral-400 mb-1">Email</label>
+                <input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  required
+                  disabled={loading !== null}
+                  className="w-full bg-neutral-900 border border-neutral-700/50 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all disabled:opacity-50"
+                />
+              </div>
+              <div>
+                <label htmlFor="password" className="block text-sm font-medium text-neutral-400 mb-1">Password</label>
+                <input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  required
+                  disabled={loading !== null}
+                  className="w-full bg-neutral-900 border border-neutral-700/50 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all disabled:opacity-50"
+                />
+              </div>
+              <button
+                type="submit"
                 disabled={loading !== null}
-                className="w-full bg-neutral-900 border border-neutral-700/50 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all disabled:opacity-50"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-neutral-400 mb-1">Password</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                required
-                disabled={loading !== null}
-                className="w-full bg-neutral-900 border border-neutral-700/50 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all disabled:opacity-50"
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={loading !== null}
-              className="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-600/20"
-            >
-              {loading === "email" ? (
-                <span className="flex items-center justify-center gap-2">
-                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  Signing in...
-                </span>
-              ) : (
-                "Sign in with Email"
-              )}
-            </button>
-          </form>
+                className="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-3 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-600/20 hover:shadow-blue-600/30"
+              >
+                {loading === "email" ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Signing in...
+                  </span>
+                ) : (
+                  "Sign in with Email"
+                )}
+              </button>
+            </form>
+          )}
 
           {/* Footer */}
           <p className="text-center text-sm text-neutral-400 mt-6">

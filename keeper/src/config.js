@@ -44,6 +44,8 @@ function loadConfig() {
     maxRetryDelayMs: parseInteger(process.env.MAX_RETRY_DELAY_MS, 30000),
     circuitFailureThreshold: parseInteger(process.env.CIRCUIT_FAILURE_THRESHOLD, 5),
     circuitRecoveryTimeoutMs: parseInteger(process.env.CIRCUIT_RECOVERY_TIMEOUT_MS, 30000),
+    maxJitterSeconds: parseInteger(process.env.MAX_TASK_JITTER_SECONDS, 0),
+    unacceptableLatenessSeconds: parseInteger(process.env.UNACCEPTABLE_LATENESS_SECONDS, 300),
     logLevel: process.env.LOG_LEVEL || 'info',
     nodeEnv: process.env.NODE_ENV || 'production',
     metricsPort: parseInteger(process.env.METRICS_PORT, 3000),

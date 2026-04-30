@@ -1,6 +1,7 @@
 const { Contract, xdr, TransactionBuilder, BASE_FEE, Networks, scValToNative } = require('@stellar/stellar-sdk');
 const { createRateLimiter } = require('./concurrency');
 const { createLogger } = require('./logger');
+const { TaskFilterChain } = require('./taskFilter');
 const { SimulationCache } = require('./simulationCache');
 const crypto = require('crypto');
 
@@ -16,6 +17,11 @@ class TaskPoller {
 
     // Structured logger for poller module
     this.logger = options.logger || createLogger('poller');
+
+    // Optional pre-filter chain — eliminates non-actionable tasks before RPC calls
+    this.filterChain = options.filterChain instanceof TaskFilterChain
+      ? options.filterChain
+      : null;
     this.metricsServer = options.metricsServer;
     this.historyManager = options.historyManager || null;
     this.shardLabel = options.shardLabel || null;
@@ -67,6 +73,7 @@ class TaskPoller {
       tasksChecked: 0,
       tasksDue: 0,
       tasksSkipped: 0,
+      tasksFiltered: 0,
       tasksSmoothed: 0,
       unacceptablyLate: 0,
       errors: 0,
@@ -74,6 +81,7 @@ class TaskPoller {
 
     this.lastCycleInsights = {
       backlogSize: 0,
+      filteredCount: 0,
       dueCount: 0,
       dueSoonCount: 0,
       minSecondsUntilDue: null,
@@ -108,6 +116,7 @@ class TaskPoller {
     this.stats.tasksChecked = 0;
     this.stats.tasksDue = 0;
     this.stats.tasksSkipped = 0;
+    this.stats.tasksFiltered = 0;
     this.stats.tasksSmoothed = 0;
     this.stats.unacceptablyLate = 0;
     this.stats.errors = 0;
@@ -119,6 +128,7 @@ class TaskPoller {
       this.logger.info('No tasks to check');
       this.lastCycleInsights = {
         backlogSize: 0,
+        filteredCount: 0,
         dueCount: 0,
         dueSoonCount: 0,
         minSecondsUntilDue: null,
@@ -138,12 +148,42 @@ class TaskPoller {
       // which might require additional RPC calls or using ledger.timestamp from contract context
       cycleLogger.info('Current ledger sequence', { sequence: currentTimestamp });
 
-      // Process tasks in parallel with concurrency control
-      const taskChecks = taskIds.map(taskId =>
+      // ── Pre-filter: eliminate non-actionable tasks without any RPC calls ──
+      let candidateIds = taskIds;
+      let filteredCount = 0;
+
+      if (this.filterChain) {
+        const registry = (options && options.registry) || null;
+        const { eligible, stats: filterStats } = this.filterChain.filterTaskIds(taskIds, {
+          currentTimestamp,
+          registry,
+          idempotencyGuard: options && options.idempotencyGuard,
+          circuitBreaker: options && options.circuitBreaker,
+        });
+
+        filteredCount = filterStats.totalFiltered;
+        this.stats.tasksFiltered = filteredCount;
+        candidateIds = eligible;
+
+        if (filteredCount > 0) {
+          this.logger.info('Pre-filter eliminated tasks', {
+            total: taskIds.length,
+            filtered: filteredCount,
+            eligible: eligible.length,
+            byFilter: filterStats.filterRejections,
+          });
+        }
+      }
+
+      // Process only candidate tasks in parallel with concurrency control.
+      // Pass registry so checkTask can hydrate the cache (gas_balance, last_run, interval)
+      // which enables cachedGasFilter and cachedTimingFilter to fire on subsequent cycles.
+      const registry = (options && options.registry) || null;
+      const taskChecks = candidateIds.map(taskId =>
         this.readLimit(async () => {
           const startedAt = Date.now();
           const correlationId = `poll-${taskId}-${crypto.randomBytes(4).toString('hex')}`;
-          const result = await this.checkTask(taskId, currentTimestamp, options.registry, { correlationId });
+          const result = await this.checkTask(taskId, currentTimestamp, registry, { correlationId });
           rpcLatencies.push(Date.now() - startedAt);
           return { ...result, correlationId };
         }),
@@ -205,6 +245,7 @@ class TaskPoller {
 
       this.lastCycleInsights = {
         backlogSize: taskIds.length,
+        filteredCount: this.stats.tasksFiltered,
         dueCount: dueTaskIds.length,
         dueSoonCount,
         minSecondsUntilDue: positiveDueWindows.length > 0 ? Math.min(...positiveDueWindows) : null,
@@ -538,6 +579,8 @@ class TaskPoller {
     const l = customLogger || this.logger;
     l.info('Poll complete', {
       durationMs: duration,
+      backlog: this.stats.tasksChecked + this.stats.tasksFiltered,
+      preFiltered: this.stats.tasksFiltered,
       checked: this.stats.tasksChecked,
       due: this.stats.tasksDue,
       smoothed: this.stats.tasksSmoothed,

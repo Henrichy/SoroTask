@@ -15,6 +15,7 @@ const { MetricsServer } = require("./src/metrics");
 const HistoryManager = require("./src/history");
 const { normalizeShardConfig, filterTasksForShard } = require("./src/sharding");
 const { StartupValidator } = require("./src/validator");
+const { createDefaultFilterChain } = require("./src/taskFilter");
 
 // Create root logger for the main module
 const logger = createLogger("keeper");
@@ -114,10 +115,18 @@ async function main() {
     logger: createLogger("idempotency"),
   });
 
-  // Initialize polling engine with logger
+  // Build the pre-filter chain — eliminates non-actionable tasks before RPC calls.
+  // Filters run in order: null-guard → cached gas → cached timing → idempotency lock → circuit breaker.
+  const filterChain = createDefaultFilterChain({
+    idempotencyGuard,
+    logger: createLogger("filter"),
+  });
+
+  // Initialize polling engine with logger and filter chain
   const poller = new TaskPoller(server, config.contractId, {
     maxConcurrentReads: process.env.MAX_CONCURRENT_READS,
     logger: createLogger("poller"),
+    filterChain,
     simulationCacheTtl: process.env.SIMULATION_CACHE_TTL,
     simulationCacheMaxSize: process.env.SIMULATION_CACHE_MAX_SIZE,
     metricsServer,
@@ -260,8 +269,10 @@ async function main() {
       }
 
       // Poll for due tasks
+      // Pass registry so cached gas/timing filters can read previously fetched values
       const dueTaskIds = await poller.pollDueTasks(shardSelection.ownedTaskIds, {
         registry,
+        idempotencyGuard,
       });
 
       if (dueTaskIds.length > 0) {
@@ -314,7 +325,7 @@ async function main() {
       const shardSelection = filterTasksForShard(taskIds, shardConfig);
       const dueTaskIds = controlState.paused
         ? []
-        : await poller.pollDueTasks(shardSelection.ownedTaskIds, { registry });
+        : await poller.pollDueTasks(shardSelection.ownedTaskIds, { registry, idempotencyGuard });
       if (dueTaskIds.length > 0) {
         const tasksToEnqueue = dueTaskIds.map(d => ({
           taskId: d.taskId,

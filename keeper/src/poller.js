@@ -1,6 +1,7 @@
 const { Contract, xdr, TransactionBuilder, BASE_FEE, Networks, scValToNative } = require('@stellar/stellar-sdk');
 const { createRateLimiter } = require('./concurrency');
 const { createLogger } = require('./logger');
+const crypto = require('crypto');
 
 /**
  * Production-grade polling engine for SoroTask Keeper.
@@ -77,6 +78,9 @@ class TaskPoller {
      * @returns {Promise<number[]>} Array of task IDs that are due for execution
      */
   async pollDueTasks(taskIds, options = {}) {
+    const cycleId = crypto.randomBytes(4).toString('hex');
+    const cycleLogger = this.logger.childWithTrace(`cycle-${cycleId}`);
+    
     const startTime = Date.now();
     this.stats.lastPollTime = new Date().toISOString();
     this.stats.tasksChecked = 0;
@@ -106,15 +110,18 @@ class TaskPoller {
       const ledgerInfo = await this.server.getLatestLedger();
       const currentTimestamp = this.resolveLedgerTimestamp(ledgerInfo);
 
-      this.logger.info('Current ledger timestamp', { currentTimestamp });
+      // Note: In production, you'd want to use the actual ledger timestamp
+      // which might require additional RPC calls or using ledger.timestamp from contract context
+      cycleLogger.info('Current ledger sequence', { sequence: currentTimestamp });
 
       // Process tasks in parallel with concurrency control
       const taskChecks = taskIds.map(taskId =>
         this.readLimit(async () => {
           const startedAt = Date.now();
-          const result = await this.checkTask(taskId, currentTimestamp, options.registry);
+          const correlationId = `poll-${taskId}-${crypto.randomBytes(4).toString('hex')}`;
+          const result = await this.checkTask(taskId, currentTimestamp, options.registry, { correlationId });
           rpcLatencies.push(Date.now() - startedAt);
-          return result;
+          return { ...result, correlationId };
         }),
       );
 
@@ -128,11 +135,10 @@ class TaskPoller {
       let maxDriftTaskId = null;
 
       results.forEach((result, index) => {
-        if (result.status === 'fulfilled' && result.value) {
-          const { isDue, taskId, reason } = result.value;
+          const { isDue, taskId, reason, correlationId } = result.value;
 
           if (isDue) {
-            dueTaskIds.push(taskId);
+            dueTaskIds.push({ taskId, correlationId });
             this.stats.tasksDue++;
           } else if (reason === 'skipped') {
             this.stats.tasksSkipped++;
@@ -194,7 +200,7 @@ class TaskPoller {
         });
       }
 
-      this.logPollSummary(duration);
+      this.logPollSummary(duration, cycleLogger);
 
       return dueTaskIds;
 
@@ -216,16 +222,23 @@ class TaskPoller {
      *
      * @param {number} taskId - The task ID to check
      * @param {number} currentTimestamp - Current ledger timestamp
-     * @returns {Promise<{isDue: boolean, taskId: number, reason?: string}>}
+     * @param {Object} [registry] - Optional task registry
+     * @param {Object} [options] - Additional options including correlationId
+     * @returns {Promise<{isDue: boolean, taskId: number, reason?: string, correlationId?: string}>}
      */
-  async checkTask(taskId, currentTimestamp, registry) {
+  async checkTask(taskId, currentTimestamp, registry, options = {}) {
+    const correlationId = options.correlationId;
+    const taskLogger = correlationId 
+      ? this.logger.childWithTrace(correlationId)
+      : this.logger;
+
     try {
       // Read task configuration from contract using view call
       const taskConfig = await this.getTaskConfig(taskId);
 
       if (!taskConfig) {
-        this.logger.warn('Task not found (may have been deregistered)', { taskId });
-        return { isDue: false, taskId, reason: 'not_found' };
+        taskLogger.warn('Task not found (may have been deregistered)', { taskId });
+        return { isDue: false, taskId, reason: 'not_found', correlationId };
       }
 
       // Update registry with latest task details
@@ -235,8 +248,8 @@ class TaskPoller {
 
       // Check gas balance
       if (taskConfig.gas_balance <= 0) {
-        this.logger.warn('Task has insufficient gas balance', { taskId, gasBalance: taskConfig.gas_balance });
-        return { isDue: false, taskId, reason: 'skipped' };
+        taskLogger.warn('Task has insufficient gas balance', { taskId, gasBalance: taskConfig.gas_balance });
+        return { isDue: false, taskId, reason: 'skipped', correlationId };
       }
 
       // Calculate if task is due: last_run + interval <= currentTimestamp
@@ -248,7 +261,7 @@ class TaskPoller {
       const driftSeverity = this.getDriftSeverity(driftSeconds);
 
       if (isDue) {
-        this.logger.info('Task is due', {
+        taskLogger.info('Task is due', {
           taskId,
           lastRun: taskConfig.last_run,
           interval: taskConfig.interval,
@@ -283,6 +296,7 @@ class TaskPoller {
       return {
         isDue,
         taskId,
+        correlationId,
         secondsUntilDue: Number.isFinite(nextRunTime)
           ? Math.max(0, nextRunTime - currentTimestamp)
           : null,
@@ -291,7 +305,7 @@ class TaskPoller {
       };
 
     } catch (error) {
-      this.logger.error('Error checking task', { taskId, error: error.message });
+      taskLogger.error('Error checking task', { taskId, error: error.message });
       throw error;
     }
   }
@@ -433,9 +447,11 @@ class TaskPoller {
    * Log a summary of the polling cycle.
    *
    * @param {number} duration - Duration of the poll in milliseconds
+   * @param {Object} [customLogger] - Optional logger to use
    */
-  logPollSummary(duration) {
-    this.logger.info('Poll complete', {
+  logPollSummary(duration, customLogger) {
+    const l = customLogger || this.logger;
+    l.info('Poll complete', {
       durationMs: duration,
       checked: this.stats.tasksChecked,
       due: this.stats.tasksDue,
